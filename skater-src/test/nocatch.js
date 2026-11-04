@@ -1,0 +1,23 @@
+const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{
+  const b=await L.launch();
+  const ctx=await b.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,hasTouch:true,isMobile:true});await L.mock(ctx);
+  const p=await ctx.newPage();const errs=[];L.errs(p,errs);
+  await p.addInitScript(()=>{localStorage.setItem('fs_pracDone','true');localStorage.setItem('fs_settings',JSON.stringify({q:0,easy:false,music:false,sfx:false,dots:true,flick:3,steer:3,time:'day'}));});
+  await p.goto(L.URL);await p.waitForTimeout(1500);
+  await p.evaluate(()=>{window.__noRender=true;__dbg.startGame('free');window.__L=[];const I=__dbg.input;const o=I._flickCheck.bind(I);
+    I._flickCheck=(pp,t)=>{const v=I._vel(pp,t);const n0=I.events.length+I.pend.length;o(pp,t);window.__L.push([pp.id,pp.role,pp.armed,Math.round(v[0]),Math.round(v[1]),Math.round(v[2]),pp.hist.length,I.inAir,(I.events.length+I.pend.length)>n0?JSON.stringify(I.events.concat(I.pend).slice(-1)[0]):'']);};
+    const ou=I._up.bind(I);I._up=(e,c)=>{window.__L.push(['UP',e.pointerId,c?'cancel':'',e.clientX,e.clientY]);return ou(e,c);};
+    const sk=__dbg.sk;sk.reset(-6,-14,0);sk.s=4;});
+  await sleep(500);
+  const cdp=await ctx.newCDPSession(p);
+  const send=(type,pts)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:pts.map(([x,y,id])=>({x,y,id,radiusX:10,radiusY:10,force:1}))});
+  const burst=async(frames,gap)=>{const ps=[];for(const f of frames){ps.push(send('touchMove',f));await sleep(gap);}await Promise.all(ps);};
+  const g=await p.evaluate(()=>__dbg.geo);
+  const at=(al,ac)=>{const ux=g.fx-g.rx,uy=g.fy-g.ry,L=Math.hypot(ux,uy),nx=ux/L,ny=uy/L;return [g.cx+nx*al*L/2+(-ny)*ac*g.halfW, g.cy+ny*al*L/2+nx*ac*g.halfW];};
+  const A=at(-0.55,0),B=at(0.5,0);await send('touchStart',[[A[0],A[1],1],[B[0],B[1],2]]);await sleep(60);
+  const fr=[];for(let i=1;i<=5;i++){const a=at(-0.55-i*0.22,0);fr.push([[a[0],a[1],1],[B[0],B[1],2]]);}await burst(fr,8);await send('touchEnd',[]);
+  await sleep(300);
+  console.log(JSON.stringify(await p.evaluate(()=>({L:window.__L,mode:__dbg.sk.mode}))));
+  await b.close();
+})();

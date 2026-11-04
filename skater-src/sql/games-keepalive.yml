@@ -1,0 +1,27 @@
+# 游戏总项目 · Supabase 保活：每天签到一次，防止免费项目 7 天没人用被暂停（所有游戏共用）
+name: 游戏 Supabase 保活
+
+on:
+  schedule:
+    - cron: '47 2 * * *'   # 每天 UTC 2:47 = 北京时间 10:47
+  workflow_dispatch:        # 可以在「操作」里手动运行
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 签到
+        env:
+          SB_URL: https://bjpagltblvejqrvefdur.supabase.co
+          SB_KEY: sb_publishable_gCid3ieFBirnSHBhAniBqw_0-wNm-LA
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o out.txt -w '%{http_code}' -X POST "$SB_URL/rest/v1/rpc/keepalive" \
+              -H "apikey: $SB_KEY" -H "Authorization: Bearer $SB_KEY" \
+              -H "Content-Type: application/json" -d '{}' || true)
+            echo "第 $i 次：HTTP $code"; cat out.txt 2>/dev/null; echo
+            if [ "$code" = "200" ]; then echo "签到成功 ✅"; exit 0; fi
+            sleep 30
+          done
+          echo "签到失败 ❌"; exit 1
