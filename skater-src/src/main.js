@@ -9,7 +9,7 @@ import { Input } from './input.js';
 import { Combo, airTrick, GRIND_RATE, CHALLENGES } from './tricks.js';
 import { submitScore, topScores } from './net.js';
 import { Online } from './online.js';
-import { rnd, TURN_TESTS, STUN_LIST, testTurn, testStun, rtcOk } from './netcn.js';
+import { rnd } from './netcn.js';
 import { Sk8 } from './skatemode.js';
 import { FX } from './fx.js';
 import { Lighting } from './lighting.js';
@@ -575,22 +575,6 @@ bindSettings((k) => {
   if (k === 'sfx') { Aud.init(); Aud.setSfx(settings.sfx); }
   if (k === 'dots' && !settings.dots) { for (const el of dotEls.values()) el.remove(); dotEls.clear(); }
 });
-// 中转测试：每家中转服务器能不能连上 + 能不能打洞直连
-$('sTurn').onclick = async () => {
-  const btn = $('sTurn'), out = $('sTurnRes'); if (btn.disabled) return;
-  btn.disabled = true; btn.textContent = '测试中…'; out.textContent = '正在测试，最多 7 秒…'; Aud.click();
-  const [tr, st] = await Promise.all([Promise.all(TURN_TESTS.map((t) => testTurn(t, 7000))), Promise.all(STUN_LIST.map((s) => testStun(s[1], 5000)))]);
-  const line = (t, r) => t.name + ' ' + t.label + '（中转）' + (r.ok ? '：✓ 能连上（' + (r.ms / 1000).toFixed(1) + ' 秒）' : '：✗ 连不上');
-  const sl = '打洞：' + STUN_LIST.map((s, i) => s[0] + (st[i].ok ? ' ✓' : ' ✗')).join(' · ');
-  const cn = '联机会自动改走服务器转发：慢一点，但能玩';
-  const end = !rtcOk() ? '结论：这个浏览器 / App 不支持直连，' + cn
-    : !st.some((r) => r.any) ? '结论：这个浏览器 / App 把直连功能关了（连本机地址都拿不到），' + cn
-    : tr.some((r) => r.ok) ? '结论：中转能用，直连不上时走中转' + (TURN_TESTS.some((t, i) => tr[i].ok && t.label.startsWith('UDP')) ? '' : '（只通 TCP / TLS，网络差时可能卡一点）')
-    : st.some((r) => r.ok) ? '结论：中转连不上，但能打洞，有机会直接直连（不花额度）；连不上时' + cn
-    : '结论：中转和打洞都不通（多半是网络挡住了这类连接），' + cn;
-  out.innerHTML = [...TURN_TESTS.map((t, i) => line(t, tr[i])), sl, end].map(esc).join('<br>');
-  btn.disabled = false; btn.textContent = '再测一次';
-};
 refreshChal();
 addEventListener('pagehide', () => online.setPlaying(false));
 // 从后台缓存回来（iOS 切回 Safari 时可能这样）：如果还在游戏里，重新算在玩（不然别人看不到自己）

@@ -12,7 +12,7 @@ export function rnd(n) {
 
 // 直连用的服务器：STUN 负责打洞（不花额度）；TURN 只在两台手机直连不上时才中转（花中转额度）
 // 顺序就是优先级：ExpressTURN（官网写免费每月 1000 GB）在前，Metered（官网写免费 500 MB，标着 trial，和 Chatter 共用）做备用
-// 打洞服务器（国内的在前）：游戏连接全用上；「中转测试」里每个单独测（腾讯 stun.qq.com 实测连不上，已去掉）
+// 打洞服务器（国内的在前，2026-11-05 国内真机实测都能用；腾讯 stun.qq.com 连不上，已去掉）
 export const STUN_LIST = [
   ['小米', 'stun:stun.miwifi.com:3478'], ['芒果TV', 'stun:stun.hitv.com:3478'], ['B站', 'stun:stun.chat.bilibili.com:3478'],
   ['Cloudflare', 'stun:stun.cloudflare.com:3478'], ['谷歌', 'stun:stun.l.google.com:19302'],
@@ -24,7 +24,7 @@ export const TURNS = [
   // 留着 Metered 的 UDP 就会优先走它，花的是 Metered 的 500 MB 而不是 ExpressTURN 的 1 TB；去掉后 ExpressTURN 的 TCP 排第一
   { name: 'Metered', urls: ['turns:global.relay.metered.ca:443?transport=tcp'], username: '8e04f6769d4effbe70fb66f7', credential: 'z8AVqW5ZnBQ0zgNV' },
 ];
-// 中转测试：每个地址单独测（UDP / TCP / TLS 分开显示）
+// 中转测试（设置里的测试按钮已按用户要求删掉；这些函数留着，以后排查网络时可以临时加回按钮）
 const proto = (u) => (/^turns:/.test(u) ? 'TLS' : /transport=tcp/.test(u) ? 'TCP' : 'UDP') + ' ' + ((u.match(/:(\d+)(\?|$)/) || [])[1] || '');
 export const TURN_TESTS = TURNS.flatMap((t) => t.urls.map((u) => ({ name: t.name, label: proto(u), urls: [u], username: t.username, credential: t.credential })));
 export const ICE = [{ urls: STUNS }, ...TURNS.map((t) => ({ urls: t.urls, username: t.username, credential: t.credential }))];
