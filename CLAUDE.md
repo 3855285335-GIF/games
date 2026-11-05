@@ -36,7 +36,7 @@
   - Metered 是备用。官网写的是"Free: 500 MB trial"，每月 500MB，和 Chatter 共用。只留 TLS 443：如果留着它的 UDP，浏览器会优先选 UDP 中转，在国内就会花掉 Metered 的 500MB，而不是 ExpressTURN 的额度。
   - 两家的账号直接写在网页里，任何人都看得到，和 Chatter 共用。
 - 打洞服务器：小米、芒果TV、B站、Cloudflare、谷歌，国内真机实测都能用；stun.qq.com 不能用。
-- 保活：`sql/games-setup.sql` 里的 keepalive() 函数，加上 GitHub Actions 每天签到（`sql/games-keepalive.yml`）。这个工作流实际放在哪个仓库运行，还要和用户确认。
+- 保活：`sql/games-setup.sql` 里的 keepalive() 函数，加上 GitHub Actions 每天签到（`sql/games-keepalive.yml`）。工作流实际放在私有仓库 chatter-keepalive 里运行，和 Chatter 的保活在一起（2026-11-05 查过，每天都成功）。
 
 ## 相关项目
 
