@@ -25,14 +25,24 @@
 
 - 打包：`cd skater-src && ./build.sh`，生成 `out/skate.html`，发布时复制成仓库根目录的 `skater.html`。
 - 需要：Node、esbuild 0.28.2、three.js r187（`npm install three@0.187.0`）、Playwright（Chromium）。
-- 测试：在 `skater-src` 里运行 `node test/名字.js`。全套是 wire、netcn、rate、sk8end、net3、phys、phys_roof、phys_yard、carve、kickturn、feel、twist2、touch3、ui3、fuzz2、qtip、turnbtn、flip2（翻板力度、接板时机、防穿模）、catch_touch（真实触摸接板），外加 `test/remote_unit.mjs`（要先用 esbuild 打包再运行）。test 里其他脚本是调试、截图用的。
+- 测试：在 `skater-src` 里运行 `node test/名字.js`。全套是 wire、netcn、rate、sk8end、net3、phys（新场地的物理场景）、carve、kickturn、feel、twist2、touch3、ui3、fuzz2、qtip、turnbtn、flip2（翻板力度、接板时机、防穿模）、catch_touch（真实触摸接板），外加 `test/remote_unit.mjs`（要先用 esbuild 打包再运行）。test 里其他脚本是调试、截图用的。
+- 打包时 `assets/` 里的背景图（.jpg）和光照数据（.txt）会直接打进网页；它们由 `tools/mkenv.py` 从全景 .hdr 生成。
 
 ## 操控和物理（2026-11-06 第 1 步重做后）
 
-- 起跳、翻板、转板都按手指划的速度算力度（`src/input.js` 里的 k，0～1）：划得越快跳得越高、转得越快。
-- 拨板后板子自己一直转，手指重新按回板上才算接住；接住时离"正"差得不多会被带正，差太多就停在歪的角度，落地摔。招式名字按板子实际转了几圈算。
-- 手感参数都在 `src/physics.js` 开头（POP_、FLIP_W、SHOVE_W、CATCH_、LAND_TOL），调手感改这里。
+- 起跳、翻板、转板都按手指划的速度算力度（`src/input.js` 里的 k，0～1）：划得越快跳得越高；拨得越重，板子转得越多、也越快，然后自己慢慢停下（2026-11-06 用户反馈"不是半圈就是一圈，还有特别多圈"后改的，不再一直转）。
+- 手指重新按回板上才算接住，板子当场停下；离"正"26° 以内会被踩正，差得多就停在歪的角度，落地摔。招式名字按板子实际转了几圈算。
+- 空中重力 5.5（滞空长，用户嫌以前 Ollie 太短）；从四分之一管飞出去用 8.2，不然飞得太高。
+- 手感参数都在 `src/physics.js` 开头（G_AIR、POP_、FLIP_MIN/FLIP_PER_K、SPIN_TAU、SNAP_TOL、LAND_TOL），调手感改这里。
 - 防穿模：板子轮廓点（HULL）每一步都和地面、道具检查，撞墙推开、摔倒时也不会穿进东西里。`flip2` 的随机部分用固定随机数，`SEED=数字` 换一组，`DBG=1` 会打印穿模最深那一刻之前的过程和状态。
+
+## 场地和画面（2026-11-06）
+
+- 只有一张场地「街区」（地图编号 spot，24×24 米，`src/maps.js`）。公园、天台、小院按用户要求删了（"玩滑板就是为了做招，不是观景"）。新编号的排行榜自然是新的，旧成绩不显示，不用跑 SQL。
+- 限时赛改成 100 秒（用户定的）。
+- 远处是真实照片全景（Poly Haven，CC0 公共领域，不用署名）：白天柏林波茨坦广场、黄昏威尼斯海边；夜晚用白天的照片调暗。照片也当光源（`src/env.js`、`src/lighting.js`）。白天的太阳方向单独定，影子落在板子左边。
+- 镜头像 Touchgrind 一样贴着板子、压低（`main.js` 的 updateCamera）。
+- 音效是开局时合成的一批采样（板子木头的共振、支架的金属声、室外短混响，`src/audio.js`），不是录音；用户说过以前的音效"很假"。
 
 ## 联机现状（2026-11-05 核实）
 

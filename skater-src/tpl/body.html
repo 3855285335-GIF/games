@@ -28,9 +28,9 @@
   <div class="logo"><b>SKATE</b><span>指尖滑板 · 在线联机</span></div>
   <div class="chips" id="maps"></div>
   <button class="btn pri" id="mFree">自由滑</button>
-  <div class="row"><button class="btn" id="mTimed">限时 60 秒</button><button class="btn" id="mPrac">练习</button></div>
+  <div class="row"><button class="btn" id="mTimed">限时 100 秒</button><button class="btn" id="mPrac">练习</button></div>
   <div class="row"><button class="btn" id="mChal">挑战<small id="chCount">0/0</small></button><button class="btn" id="mLb">排行榜</button></div>
-  <div class="lbl">名字 / 房间号（朋友填同一个房间号、选同一张地图就能一起滑）</div>
+  <div class="lbl">名字 / 房间号（朋友填同一个房间号就能一起滑）</div>
   <div class="row"><input class="in" id="inName" maxlength="10" placeholder="你的名字" autocomplete="off"><input class="in" id="inRoom" maxlength="16" placeholder="房间号" autocomplete="off"></div>
   <div id="roomInfo"></div>
   <div class="row"><button class="btn" id="mGarage">改装滑板</button><button class="btn" id="mSet">设置</button><button class="btn" id="mHelp">说明</button></div>
@@ -69,8 +69,8 @@
   <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:30px"></div><div class="f" style="left:21px;top:6px"></div><div class="ar" style="left:38px;top:16px">↑</div></div><div>手指往<b>板头方向划一下</b> = 蹬一脚，划短也有用，划出板头也照样算；抬起来放回板上再划。</div></div>
   <div class="step"><div class="pic"><div class="bd" style="transform:rotate(12deg)"></div><div class="f" style="left:27px;top:32px"></div><div class="f" style="left:29px;top:8px"></div><div class="ar" style="left:40px;top:18px">↷</div></div><div><b>压板转弯</b>：手指往板子<b>右半边压</b>，板面往右倾、沿弧线往右拐；压得越靠边弯越急。和真滑板一样，<b>滑得越快弯越大，停着压板不会转</b>。停着或很慢时：<b>一指按住板尾，另一指往旁边拨</b> = Kickturn 原地转向。</div></div>
   <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:36px"></div><div class="ar" style="left:38px;top:30px">↓</div></div><div><b>后指快速往下划出板尾</b> = 起跳 Ollie，划得越快跳得越高。<b>前指</b>快速往下划 = Nollie。</div></div>
-  <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:8px"></div><div class="ar" style="left:4px;top:4px">←</div><div class="ar" style="left:40px;top:4px">→</div></div><div>跳起来后：<b>前指从板边侧拨出去</b> = Kickflip / Heelflip；<b>后指侧拨</b> = Shove-it；两种一起 = Varial、360 Flip…；<b>两指旋转</b> = 空中转体。<b>拨得越快转得越快</b>，翻几圈、转几圈看你什么时候接板。</div></div>
-  <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:34px"></div><div class="f" style="left:21px;top:8px"></div></div><div><b>把手指按回板上</b> = 接板，板子马上停住。拨过板时，板子转到<b>快正的角度</b>黄圈会亮：这时接就能站住；按早了没翻够，按晚了翻过头，都会摔。只起跳没拨板的话，落地前接住就行。</div></div>
+  <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:8px"></div><div class="ar" style="left:4px;top:4px">←</div><div class="ar" style="left:40px;top:4px">→</div></div><div>跳起来后：<b>前指从板边侧拨出去</b> = Kickflip / Heelflip；<b>后指侧拨</b> = Shove-it；两种一起 = Varial、360 Flip…；<b>两指旋转</b> = 空中转体。<b>拨得越重，板子转得越多、越快</b>，转完会自己慢下来：力度差一点，转的角度就差一点。</div></div>
+  <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:34px"></div><div class="f" style="left:21px;top:8px"></div></div><div><b>把手指按回板上</b> = 接板，板子马上停住。拨过板时，板子转到<b>正的角度</b>黄圈会亮：这时接就能站住。拨轻了转不够会摔；拨重了要趁黄圈亮的时候早点接，不然转过头。只起跳没拨板的话，落地前接住就行。</div></div>
   <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:21px;top:40px"></div></div><div>只用一根手指<b>按住板尾</b> = Manual，越靠板尾翘得越高，让指针停在<b>绿色区</b>；按住板头 = Nose Manual。</div></div>
   <div class="step"><div class="pic"><div class="bd"></div><div class="f" style="left:6px;top:20px"></div><div class="f" style="left:36px;top:20px"></div><div class="ar" style="left:20px;top:2px">⇉</div></div><div>两指<b>一起往同一边横甩</b> = Powerslide 急停。在碗池、U 台<b>下坡时两指按稳在板上</b> = 压板加速，可以一直来回滑。</div></div>
   <div class="step"><div class="pic"><div class="bd" style="transform:rotate(90deg);top:5px"></div></div><div>靠近<b>杆子、台子边、池边</b>时那段会亮起来：<b>两指同时按住不动</b>就自动跳上去磨，手指按着就一直磨，<b>松开跳下来</b>；自己起跳落到杆上也能磨。招式之间不落地或用 Manual 连起来，分数<b>翻倍</b>。</div></div>
@@ -85,7 +85,7 @@
   <button class="btn" id="chClose">返回</button>
 </div></div>
 <div id="lb" class="ov mid hide"><div class="card">
-  <h3>排行榜 · 限时 60 秒</h3>
+  <h3>排行榜 · 限时 100 秒</h3>
   <div class="chips" id="lbMaps"></div>
   <div id="lbList"></div>
   <div class="note" id="lbNote"></div>

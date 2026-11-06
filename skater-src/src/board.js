@@ -1,14 +1,15 @@
 // 滑板模型。原点 = 四个轮子着地平面的中心，+Z 板头，+Y 向上
 // 结构：板面组（板面 + 螺丝 + 底座 + 桥胶，可以侧倾、落地下沉）+ 前后两个支架组（支架 + 轴 + 轮子，转弯时会跟着转一点）
 import { Group, Mesh, BufferGeometry, Float32BufferAttribute, MeshStandardMaterial, BoxGeometry, CylinderGeometry, LatheGeometry, ExtrudeGeometry, Shape, Vector2, Color, Matrix4, CanvasTexture, SRGBColorSpace } from 'three';
-import { grip, deckTexture, DECKS, GRIPS, WHEELS, TRUCKS } from './textures.js';
+import { grip, gripNormal, deckTexture, DECKS, GRIPS, WHEELS, TRUCKS } from './textures.js';
 import { MB } from './meshkit.js';
 
 export const DECK = { L: 0.8, W: 0.21, kickZ: 0.265, rise: 0.058, base: 0.075, thick: 0.011, truckZ: 0.18 };
 const AXY = 0.027, WR = 0.027, WW = 0.032, WX = 0.084; // 轴高、轮半径、轮宽、轮子中心离板中线
 const PIV = 0.052; // 板面侧倾的转轴高度（支架的转轴附近）
 const GRIPM = [], WHEELM = [], TRUCKM = [];
-const gripMat = (i) => GRIPM[i] || (GRIPM[i] = new MeshStandardMaterial({ map: grip(i), roughness: 0.97 }));
+let GN = null;
+const gripMat = (i) => GRIPM[i] || (GRIPM[i] = new MeshStandardMaterial({ map: grip(i), normalMap: GN || (GN = gripNormal()), normalScale: new Vector2(0.9, 0.9), roughness: 0.82 })); // 砂纸颗粒在灯下有一点点闪
 const wheelMat = (i) => WHEELM[i] || (WHEELM[i] = new MeshStandardMaterial({ color: new Color(WHEELS[i]), roughness: 0.62 }));
 const truckMat = (i) => TRUCKM[i] || (TRUCKM[i] = new MeshStandardMaterial({ color: TRUCKS[i].c, metalness: TRUCKS[i].m, roughness: TRUCKS[i].r }));
 // 板子配置：{ deck, grip, wheel, truck }，兼容旧的数字写法
@@ -31,7 +32,7 @@ function shared() {
   SHARED = {
     side: new MeshStandardMaterial({ map: st, roughness: 0.75 }),
     dark: new MeshStandardMaterial({ color: 0x1d1e21, metalness: 0.3, roughness: 0.55 }),
-    steel: new MeshStandardMaterial({ color: 0xc9ccd2, metalness: 0.8, roughness: 0.3 }),
+    steel: new MeshStandardMaterial({ color: 0x45484d, metalness: 0.35, roughness: 0.5 }), // 板面上的螺丝：暗一点（以前反光像白点）
     bush: new MeshStandardMaterial({ color: 0xffa21f, roughness: 0.72 }),
   };
   return SHARED;

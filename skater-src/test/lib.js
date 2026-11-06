@@ -41,7 +41,7 @@ function makeGame(log){
 exports.mock=async(ctx,log,opts)=>{
   opts=opts||{};
   // 老测试的坐标都是按「公园」写的：没指定时默认公园（新版第一次打开默认小院）
-  if(!opts.yard)await ctx.addInitScript(()=>{if(!localStorage.getItem('fs_mapv')){localStorage.setItem('fs_mapv','2');localStorage.setItem('fs_map','"park"');}});
+
   const socks=[];log=log||{joins:[],bcast:0,rest:[],perSec:{}};log.rest=log.rest||[];log.ev=log.ev||{};log.hev=log.hev||{};log.rpc=log.rpc||{};
   const deliver=(topic,payload,from)=>{for(const x of socks)if(x!==from&&x.topic===topic)x.ws.send(JSON.stringify({topic,event:'broadcast',payload,ref:null}));};
   await ctx.routeWebSocket(/realtime\/v1\/websocket/,ws=>{

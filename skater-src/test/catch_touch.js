@@ -16,7 +16,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const G = () => p.evaluate(() => __dbg.geo);
   const at = (g, al, ac) => { const ux = g.fx - g.rx, uy = g.fy - g.ry, L2 = Math.hypot(ux, uy), nx = ux / L2, ny = uy / L2; return [g.cx + nx * al * L2 / 2 + (-ny) * ac * g.halfW, g.cy + ny * al * L2 / 2 + nx * ac * g.halfW]; };
   const trial = async (catchAt) => {
-    await p.evaluate(() => { const sk = __dbg.sk; __dbg.combo.clear(); sk.reset(-6, -14, 0); sk.s = 4; __dbg.renderQ.copy(sk.qv); window.__names = []; window.__bail = null;
+    await p.evaluate(() => { const sk = __dbg.sk; __dbg.combo.clear(); sk.reset(2.6, -9.6, 0); sk.s = 4; __dbg.renderQ.copy(sk.qv); window.__names = []; window.__bail = null;
       const c = __dbg.combo; if (!c.__w) { const o = c.add.bind(c); c.add = (n, pts) => { window.__names.push(n); return o(n, pts); }; c.__w = 1; }
       const s0 = sk.cb.onBail; if (!sk.__w) { sk.cb.onBail = (r) => { window.__bail = r; return s0(r); }; sk.__w = 1; } });
     await sleep(500);

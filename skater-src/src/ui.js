@@ -95,6 +95,7 @@ export function bindSettings(apply) {
 /* ---------- 地图选择 ---------- */
 export function buildMapChips(box, cur, onPick) {
   box.innerHTML = '';
+  box.style.display = MAPS.length > 1 ? '' : 'none'; // 只有一张地图时不用选
   for (const m of MAPS) {
     const d = document.createElement('div'); d.className = 'chip' + (m.id === cur ? ' on' : ''); d.innerHTML = esc(m.name) + '<small>' + esc(m.desc) + '</small>';
     d.onclick = () => { [...box.children].forEach((c) => c.classList.remove('on')); d.classList.add('on'); onPick(m.id); Aud.click(); };

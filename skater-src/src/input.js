@@ -175,7 +175,7 @@ export class Input {
     this.pend = this.pend.filter((e) => { if (tn - e.t > 0.07 || this.inAir) { this.events.push(e); return false; } return true; });
     const act = real.filter((p) => p.on);
     const sens = (this.opts.sens && this.opts.sens().steer) || 1;
-    let lean = 0, push = 0, brake = 0, manual = 0, twist = 0, pump = false, kick = 0;
+    let lean = 0, push = 0, brake = 0, manual = 0, twist = 0, pump = false, kick = 0, kickPivot = -1;
     const recent = (q) => q.flickT && tn - q.flickT < 0.2;
     if (act.length) {
       const use = act.filter((p) => !recent(p));
@@ -213,7 +213,7 @@ export class Input {
           let rot = true;
           for (const q of [A, B]) { const mx = q.x - q.px, my = q.y - q.py, rad = Math.abs(mx * lx + my * ly), per = Math.abs(-mx * ly + my * lx); if (rad > per * 0.9 + 0.6) rot = false; }
           if (Math.abs(d) > 0.07) this.anchor.kick = true;
-          if (rot && this.anchor.kick) kick = -dd;
+          if (rot && this.anchor.kick) { kick = -dd; const still = sp[0] <= sp[1] ? A : B, l = this.local(still.x, still.y); kickPivot = l && l.along > 0 ? 1 : -1; } // 按住不动的那根手指在哪头，板子就绕哪头的轮子转
         }
         if (!act.length) lean = 0;
       }
@@ -265,7 +265,7 @@ export class Input {
     this.trails = this.trails.filter((tr) => !tr.end || tn - tr.end < 0.4);
     // 键盘：Z / C = Kickturn 左 / 右
     if (K.KeyZ) kick += 4 * dt; if (K.KeyC) kick -= 4 * dt;
-    return { lean: clamp(lean, -1.25, 1.25), push, brake, manual: clamp(manual, -1.4, 1.4), twist, spinRate, fingers: act.length, touching: real.length, caught, capT, auto, fb, pump, hold, kick: clamp(kick, -0.5, 0.5) };
+    return { lean: clamp(lean, -1.25, 1.25), push, brake, manual: clamp(manual, -1.4, 1.4), twist, spinRate, fingers: act.length, touching: real.length, caught, capT, auto, fb, pump, hold, kick: clamp(kick, -0.5, 0.5), kickPivot };
   }
   drain() { const e = this.events; this.events = []; return e; }
 }

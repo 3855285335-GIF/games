@@ -36,7 +36,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     };
     const pen = () => {
       const bail = sk.mode === 'bail', q = bail ? sk.bq : sk.qv;
-      const pts = sk._hull(sk.p.x, sk.p.y, sk.p.z, q, bail ? 0 : sk.visPitch(), bail ? 0 : sk.flipA, bail ? 0 : sk.shoveA);
+      const pts = sk._hull(sk.p.x, sk.p.y + (bail ? 0 : sk.groundLift()), sk.p.z, q, bail ? 0 : sk.visPitch(), bail ? 0 : sk.flipA, bail ? 0 : sk.shoveA);
       let m = 0, wi = -1; pts.forEach((P, i) => { const r = sk.T.query(P.x, P.z, qq); const d = depth(P, r); if (d > m) { m = d; wi = i; worst = [i, +P.x.toFixed(2), +P.y.toFixed(3), +P.z.toFixed(2), +r.h.toFixed(3), +Math.hypot(r.gx, r.gz).toFixed(2), r.f ? r.f.t + (r.f.name ? ':' + r.f.name : '') : 'ground', +sk.flipA.toFixed(2), +sk.shoveA.toFixed(2), +sk.visPitch().toFixed(2), sk.s ? +sk.s.toFixed(2) : 0, +sk.slip.toFixed(2)]; } });
       return m;
     };
@@ -56,49 +56,54 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     const at = (t, x) => Math.abs(t - x) < 0.5 / 240;
 
     // 1 力度：同样起跳，轻拨和猛拨转速不同（不接板，看 0.2 秒时转了多少）
-    const spinAt = (k) => { place(-6, -14, 0, 4); let a = 0; run(0.25, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (at(t, 0.24)) a = sk.flipA; }); return a; };
+    const spinAt = (k) => { place(2.6, -9.6, 0, 4); let a = 0; run(0.25, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (at(t, 0.24)) a = sk.flipA; }); return a; };
     out.soft = spinAt(0.15); out.hard = spinAt(0.85);
     // 2 起跳力度：划得快跳得高
-    const hop = (k) => { place(-6, -14, 0, 4); let my = 0; run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', k); i.fingers = 2; i.caught = true; my = Math.max(my, sk.p.y); }); return my; };
+    const hop = (k) => { place(2.6, -9.6, 0, 4); let my = 0; run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', k); i.fingers = 2; i.caught = true; my = Math.max(my, sk.p.y); }); return my; };
     out.hopLo = hop(0); out.hopHi = hop(1);
     // 3 接板时机（手指在 tc 秒重新踩上板）
     const kick = (k, tc, capT) => {
-      place(-6, -14, 0, 4);
+      place(2.6, -9.6, 0, 4);
       return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (tc != null && t >= tc) { i.fingers = 1; i.touching = 1; i.capT = capT == null ? 2.0 : capT; } });
     };
-    out.good = kick(0.4, 0.36);
-    out.early = kick(0.4, 0.15);
-    out.late = kick(0.4, 0.55);
-    out.never = kick(0.4, null);
-    out.oldFinger = kick(0.4, 0.36, 0.5); // 一直按着没离开过板的手指，不算接住
-    out.double = kick(1.0, 0.45);
+    out.good = kick(0.34, 0.75);   // 力度 0.34 ≈ 正好一圈：转完以后什么时候接都行
+    out.good2 = kick(0.5, 0.38);   // 力度 0.5 = 转 1.25 圈：在转到一圈的那一下接住（拨完 0.27～0.39 秒）
+    out.early = kick(0.34, 0.15);  // 才转了一点就接
+    out.late = kick(0.5, 0.95);    // 力度 0.5 转过头了还不接
+    out.light = kick(0.15, 0.9);   // 拨太轻：转不到一圈
+    out.never = kick(0.34, null);
+    out.oldFinger = kick(0.34, 0.75, 0.5); // 一直按着没离开过板的手指，不算接住
+    out.double = kick(1.0, 0.9);
     // 4 Shove-it：力度不同转速不同；接在 90° 会摔
-    const shove = (k, tc) => { place(-6, -14, 0, 4); return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('back', -1, k, 1.0); if (t >= tc) { i.fingers = 1; i.capT = 2.0; } }); };
-    out.shoveGood = shove(0.3, 0.05 + Math.PI / (5 + 11 * 0.3) - 0.05);
-    out.shoveHalf = shove(0.3, 0.05 + (Math.PI / 2) / (5 + 11 * 0.3));
+    const shove = (k, tc) => { place(2.6, -9.6, 0, 4); return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('back', -1, k, 1.0); if (t >= tc) { i.fingers = 1; i.capT = 2.0; } }); };
+    out.shoveGood = shove(0.34, 0.8);
+    out.shoveHalf = shove(0.34, 0.2);
+    // 4c 力度一点点不同，转的角度就不同（不接板，看最后停在多少度）
+    const rest = (k) => { place(2.6, -9.6, 0, 4); let a = 0; run(0.9, (t) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); a = sk.flipA; }); return Math.abs(a); };
+    out.rest = [0.3, 0.32, 0.34, 0.36, 0.38].map(rest);
     // 5 低跳 + 马上猛翻：翻的时候板边不能穿进地里
-    place(-6, -14, 0, 4); out.lowFlip = run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', 0); if (at(t, 0.01)) sk.flick('front', 1, 1, 1.0); if (t > 0.3) { i.fingers = 1; i.capT = 2; } });
+    place(2.6, -9.6, 0, 4); out.lowFlip = run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', 0); if (at(t, 0.01)) sk.flick('front', 1, 1, 1.0); if (t > 0.3) { i.fingers = 1; i.capT = 2; } });
     // 6 键盘 / 简单模式：自动接板
-    place(-6, -14, 0, 4); out.auto = run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.6); if (at(t, 0.04)) { sk.flick('front', -1, 0.45, 1.0); sk.flick('back', -1, 0.45, 1.0); } i.auto = true; });
-    // 7 慢速顶到台子侧面（ledge A：x 2.5~9.5，z -30.3~-29.7，高 0.45）：板头不能伸进去
-    place(6, -27, Math.PI, 2); out.noseWall = run(2.5, null);
-    // 8 快速撞台子摔倒：摔出去的板子不能穿进台子 / 地面
-    place(6, -27.2, Math.PI, 6); out.bailWall = run(2.5, null);
-    // 9 贴着台子原地转（Kickturn）：板头不能转进台子里
-    place(4.5, -29.3, Math.PI / 2, 0); out.kickWall = run(1.5, (t, i) => { i.kick = 0.02; });
-    // 10 撞世界边上的墙（公园北边界）
-    place(0, -40, Math.PI, 6.5); out.edge = run(3, null);
-    // 11 磨杆：台边 50-50、圆杆 Boardslide
-    place(-1, -29.72, Math.PI / 2, 4.5); out.ledge = run(3, (t, i) => { if (at(t, 0.55)) sk.pop('tail', 0.4); i.fingers = 2; i.caught = true; });
-    place(-4, -34, 0, 4.5); let railY = null;
-    out.rail = run(2, (t, i) => { if (at(t, 0.95)) sk.pop('tail', 0.5); if (t > 0.96 && t < 1.2) i.spinRate = 6.3; i.fingers = 2; i.caught = true;
+    place(2.6, -9.6, 0, 4); out.auto = run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.6); if (at(t, 0.04)) { sk.flick('front', -1, 0.45, 1.0); sk.flick('back', -1, 0.45, 1.0); } i.auto = true; });
+    // 7 慢速顶到长边沿侧面（边沿 x -4.475～-3.925，z -5.6～4.4，高 0.42）：板头不能伸进去
+    place(-2.2, 0, -Math.PI / 2, 2); out.noseWall = run(2.5, null);
+    // 8 快速撞边沿摔倒：摔出去的板子不能穿进边沿 / 地面
+    place(-2.2, 0.2, -Math.PI / 2, 6); out.bailWall = run(2.5, null);
+    // 9 贴着边沿原地转（Kickturn）：板头不能转进边沿里
+    place(-3.6, 0, 0, 0); out.kickWall = run(1.5, (t, i) => { i.kick = 0.02; });
+    // 10 撞世界边上的墙（南边）
+    place(0, -10.6, Math.PI, 6.5); out.edge = run(3, null);
+    // 11 磨杆：边沿 50-50、平杆 Boardslide
+    place(-3.95, -8.2, 0, 4.5); out.ledge = run(3, (t, i) => { if (at(t, 0.1)) sk.pop('tail', 0.3); i.fingers = 2; i.caught = true; });
+    place(4.4, -9.6, 0, 4.5); let railY = null;
+    out.rail = run(2.5, (t, i) => { if (at(t, 0.3)) sk.pop('tail', 0.4); if (t > 0.31 && t < 0.56) i.spinRate = 6.3; i.fingers = 2; i.caught = true;
       if (sk.mode === 'grind' && sk.grind && railY == null) { const r = sk.grind.r; railY = { top: r.ay + 0.022, deck: sk.p.y + 0.075, type: sk.grind.type }; } });
     out.railY = railY;
     // 12 大量随机招式 + 摔倒（三张地图各 40 秒）：最深穿模
     out.fuzz = {};
-    for (const m of ['yard', 'park', 'roof']) {
-      __dbg.loadMap(m);
-      let s = 7 + m.length; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (const m of ['spot1', 'spot2', 'spot3']) { // 只有一张地图：换三组随机数各跑 40 秒
+      __dbg.loadMap('spot');
+      let s = 7 + m.length * 13 + m.charCodeAt(4) * 101; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
       place(sk.T.spawn.x, sk.T.spawn.z, sk.T.spawn.yaw, 3);
       let tc = 9, cap = 1;
       out.fuzz[m] = run(40, (t, i) => {
@@ -119,32 +124,35 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
       run(3, (t, i) => { if (popK != null && at(t, 0.04)) sk.pop('tail', popK); i.fingers = 2; i.caught = true; if (sk.mode === 'air') { airT += 1 / 240; maxAirT = Math.max(maxAirT, airT); } else airT = 0; maxV = Math.max(maxV, sk.speed()); });
       return { maxAirT: +maxAirT.toFixed(2), maxV: +maxV.toFixed(2), mode: sk.mode };
     };
-    out.hangBox = hang('roof', 11.21, 8.2, Math.PI / 2, null, 0.8, 0);
-    out.hangQp = hang('park', 20.16, -8.62, Math.PI / 2, 0.6, 0, null);
-    out.hangStairs = hang('park', -18.711, -33.292, 1.874, 0.3, 0, null); // 一个轮子搭在台阶边上
+    out.hangBox = hang('spot', 6.3, -1.4, Math.PI / 2, null, 0.8, 0);        // 慢慢跳向跳箱侧面（高 0.5）：板头搭在箱子边上
+    out.hangQp = hang('spot', 6.92, -4.3, Math.PI / 2 + 0.4, 0.6, 0, null);  // 板边搭在跳箱上坡的侧面
+    out.hangStairs = hang('spot', -6.45, -8.1, 1.874, 0.3, 0, null);         // 一个轮子搭在台阶边上
     return out;
   });
   const deg = (r) => Math.round(r * 180 / Math.PI);
   ok(Math.abs(R.hard) / Math.abs(R.soft) > 1.8, `1 拨得越快转得越快：轻拨 0.2 秒转 ${deg(Math.abs(R.soft))}°，猛拨 ${deg(Math.abs(R.hard))}°`);
   ok(R.hopHi - R.hopLo > 0.6, `2 划得越快跳得越高：轻 ${R.hopLo.toFixed(2)} 米，猛 ${R.hopHi.toFixed(2)} 米`);
-  ok(R.good.names.includes('Kickflip') && !R.good.bails.length, `3a 快翻完时接板 → Kickflip（${R.good.names}）`);
+  ok(R.good.names.includes('Kickflip') && !R.good.bails.length, `3a 正好一圈的力度 → Kickflip（${R.good.names} ${R.good.bails}）`);
+  ok(R.good2.names.includes('Kickflip') && !R.good2.bails.length, `3a2 拨重了一点，在转到一圈时接住 → Kickflip（${R.good2.names} ${R.good2.bails}）`);
   ok(R.early.bails[0] === 'flipShort', `3b 接太早 → 没翻够（${R.early.bails}）`);
-  ok(R.late.bails[0] === 'flipOver', `3c 接太晚 → 翻过头（${R.late.bails}）`);
+  ok(R.late.bails[0] === 'flipOver', `3c 拨重了又不早点接 → 翻过头（${R.late.bails}）`);
+  ok(R.light.bails[0] === 'flipShort', `3c2 拨太轻 → 转不到一圈（${R.light.bails}）`);
   ok(R.never.bails[0] === 'catch', `3d 不接 → 没接住（${R.never.bails}）`);
   ok(R.oldFinger.bails[0] === 'catch', `3e 一直按着、没离开过板的手指不算接住（${R.oldFinger.bails}）`);
   ok(R.double.names.some((n) => /Double Kickflip/.test(n)) && !R.double.bails.length, `3f 猛拨 + 转两圈时接 → Double Kickflip（${R.double.names} ${R.double.bails}）`);
   ok(R.shoveGood.names.some((n) => /Shove-it/.test(n)) && !R.shoveGood.bails.length, `4a 转板转到半圈接 → ${R.shoveGood.names}`);
   ok(/^shove/.test(R.shoveHalf.bails[0] || ''), `4b 转到 90° 就接 → 摔（${R.shoveHalf.bails}）`);
+  ok(R.rest.every((a, i) => !i || a > R.rest[i - 1] + 0.05), `4c 力度差一点，转的角度就差一点：${R.rest.map(deg).join('° → ')}°`);
   ok(R.lowFlip.mx.air <= 0.03, `5 低跳马上猛翻：空中板子最深穿进地面 ${R.lowFlip.mx.air} 米（${R.lowFlip.names} ${R.lowFlip.bails}）`);
   ok(R.auto.names.some((n) => /Varial Kickflip/.test(n)), `6 自动接板（键盘 / 简单模式）：${R.auto.names} ${R.auto.bails}`);
   ok(R.noseWall.mx.ground <= 0.02 && !R.noseWall.bails.length, `7 慢速顶到台子侧面：板头最深伸进去 ${R.noseWall.mx.ground} 米，没摔`);
   ok(R.bailWall.bails[0] === 'wall' && R.bailWall.mx.bail <= 0.03 && R.bailWall.mx.ground <= 0.02, `8 快速撞台子摔倒：摔出去的板子最深 ${R.bailWall.mx.bail} 米，地面 ${R.bailWall.mx.ground} 米`);
   ok(R.kickWall.mx.ground <= 0.02, `9 贴着台子原地转：最深 ${R.kickWall.mx.ground} 米`);
   ok(R.edge.mx.ground < 0.02 && R.edge.mx.bail < 0.03, `10 撞世界边上的墙：板子伸到墙外最多 地面 ${R.edge.mx.ground}、摔倒 ${R.edge.mx.bail} 米`);
-  ok(R.ledge.names.includes('50-50') && R.ledge.mx.grind <= 0.01, `11a 台边 50-50：磨的时候最深穿进台面 ${R.ledge.mx.grind} 米`);
+  ok(R.ledge.names.includes('50-50') && R.ledge.mx.grind <= 0.01, `11a 边沿 50-50：磨的时候最深穿进台面 ${R.ledge.mx.grind} 米（${R.ledge.names}）`);
   ok(R.railY && Math.abs(R.railY.deck - R.railY.top - 0.003) < 0.005, `11b 圆杆 ${R.railY && R.railY.type}：板底在杆子顶上 ${R.railY ? ((R.railY.deck - R.railY.top) * 100).toFixed(1) : '?'} 厘米`);
   for (const m of Object.keys(R.fuzz)) { const f = R.fuzz[m]; if (f.mx.air > 0.03 || f.mx.bail > 0.03 || f.mx.grind > 0.012 || f.mx.ground > 0.03) { const { hist, ...w } = f.where; console.log('   最深的位置', JSON.stringify(w)); if (hist) for (const k of Object.keys(hist)) { if (k.endsWith('State')) { console.log('   ' + k + ' ' + hist[k]); continue; } console.log('   ' + k + ' 之前：'); for (const h of hist[k]) console.log('     ' + JSON.stringify(h)); } } ok(f.mx.air <= 0.03 && f.mx.bail <= 0.03 && f.mx.grind <= 0.012 && f.mx.ground <= 0.03, `12 ${m} 随机 40 秒：空中 ${f.mx.air}、摔倒 ${f.mx.bail}、磨杆 ${f.mx.grind}、地面 ${f.mx.ground} 米（招式 ${f.names.length} 个，摔 ${f.bails.length} 次）`); }
-  for (const k of ['hangBox', 'hangQp', 'hangStairs']) { const h = R[k]; ok(h.maxAirT < 1 && h.maxV < 8 && h.mode !== 'air', `13 ${{ hangBox: '板头搭在矮箱子边上', hangQp: '板边搭在 U 台侧面', hangStairs: '一个轮子搭在台阶边上' }[k]}往下掉：空中最久 ${h.maxAirT} 秒，最快 ${h.maxV} 米/秒，最后 ${h.mode}`); }
+  for (const k of ['hangBox', 'hangQp', 'hangStairs']) { const h = R[k]; ok(h.maxAirT < 1.3 && h.maxV < 8 && h.mode !== 'air', `13 ${{ hangBox: '板头搭在矮箱子边上', hangQp: '板边搭在跳箱坡的侧面', hangStairs: '一个轮子搭在台阶边上' }[k]}往下掉：空中最久 ${h.maxAirT} 秒，最快 ${h.maxV} 米/秒，最后 ${h.mode}`); }
   console.log('errors:', errs.length ? errs : 'none');
   console.log(fails ? `有 ${fails} 项失败` : '全部通过');
   await b.close(); process.exit(fails ? 1 : 0);

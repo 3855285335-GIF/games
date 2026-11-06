@@ -5,7 +5,7 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const p=await ctx.newPage();const errs=[];L.errs(p,errs);
   await p.addInitScript(()=>{localStorage.setItem('fs_pracDone','true');localStorage.setItem('fs_settings',JSON.stringify({q:0,easy:false,music:false,sfx:false,dots:true,flick:3,steer:3,time:'day'}));});
   await p.goto(L.URL);await p.waitForTimeout(1500);
-  await p.evaluate(()=>{window.__noRender=true;__dbg.startGame('free');const sk=__dbg.sk;sk.reset(-6,-14,0);sk.s=4;});
+  await p.evaluate(()=>{window.__noRender=true;__dbg.startGame('free');const sk=__dbg.sk;sk.reset(2.6, -9.6, 0);sk.s=4;});
   await sleep(500);
   const cdp=await ctx.newCDPSession(p);
   const send=(type,pts)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:pts.map(([x,y,id])=>({x,y,id,radiusX:10,radiusY:10,force:1}))});

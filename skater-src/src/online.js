@@ -280,6 +280,8 @@ export class Online {
       if (!r.R.sample(now, r.pose)) continue;
       const P = this.tmp.set(r.pose.p[0], r.pose.p[1], r.pose.p[2]);
       r.wheel += (r.pose.v * dt) / 0.027;
+      const f = r.pose.f || 0, gl = r.pose.m === 0 && f ? Math.max(0, 0.1 * Math.abs(Math.sin(f)) - 0.06 * (1 - Math.cos(f))) : 0; // 落地时板子侧着：抬高一点，轮子不陷进地里
+      if (gl) P.y += gl;
       poseBoard(r.board, P, r.pose.q, r.pose.a, r.pose.z * DECK.truckZ, r.pose.f, r.pose.h, r.wheel, r.pose.l || 0, (r.pose.l || 0) * 0.45, 0);
       if (r.trickT > 0) { r.trickT -= dt; if (r.trickT <= 0) r.tag.innerHTML = esc(r.R.name); }
       const [px, py, pz] = project(P.x, P.y + 0.45, P.z), far = P.distanceTo(cam.position) > 70;

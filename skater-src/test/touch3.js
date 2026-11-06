@@ -15,7 +15,7 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const at=(g,al,ac)=>{const ux=g.fx-g.rx,uy=g.fy-g.ry,L=Math.hypot(ux,uy),nx=ux/L,ny=uy/L;return [g.cx+nx*al*L/2+(-ny)*ac*g.halfW, g.cy+ny*al*L/2+nx*ac*g.halfW];};
   const st=()=>p.evaluate(()=>{const s=__dbg.sk;return {mode:s.mode,spd:+s.speed().toFixed(2),hd:+s.heading.toFixed(2),lean:+s.lean.toFixed(2),man:!!s.manual,spin:+s.spin.toFixed(2),flipT:+s.flipT.toFixed(2),slide:!!s.slide,combo:__dbg.combo.list.map(e=>e.name).join('+'),ev:window.__ev.splice(0).join(','),ptrs:[...__dbg.input.ptrs.values()].map(q=>(q.ghost?'G':q.on?'on':'off')+':'+q.role).join(' ')};});
   const log=(n,o)=>console.log(n.padEnd(15),JSON.stringify(o));
-  const reset=async(spd)=>{await p.evaluate((v)=>{const sk=__dbg.sk;__dbg.combo.clear();sk.reset(-6,-14,0);sk.s=v;__dbg.renderQ.copy(sk.qv);window.__ev=[];},spd);await sleep(450);};
+  const reset=async(spd)=>{await p.evaluate((v)=>{const sk=__dbg.sk;__dbg.combo.clear();sk.reset(2.6, -9.6, 0);sk.s=v;__dbg.renderQ.copy(sk.qv);window.__ev=[];},spd);await sleep(450);};
   let g=await G();console.log('geo',JSON.stringify(Object.fromEntries(Object.entries(g).map(([k,v])=>[k,Math.round(v)]))));
   // 1 板外的手指：应该是灰色、推不动
   await send('touchStart',[[60,220,9]]);await sleep(30);await burst([[[60,180,9]],[[60,140,9]],[[60,100,9]]],30);

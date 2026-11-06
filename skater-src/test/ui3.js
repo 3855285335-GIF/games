@@ -20,7 +20,7 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   // 3b Kickturn：停下来按 Z
   await p.evaluate(()=>{__dbg.sk.s=0;});await p.keyboard.down('KeyZ');await sleep(800);await p.keyboard.up('KeyZ');await sleep(400);console.log('after kick',JSON.stringify(await pr()));
   // 4 Ollie / 5 翻板 / 6 转板（键盘，自动接板）
-  const resetRun=async()=>{await p.evaluate(()=>{const sk=__dbg.sk;sk.reset(-6,-14,0);sk.s=4;});await sleep(150);};
+  const resetRun=async()=>{await p.evaluate(()=>{const sk=__dbg.sk;sk.reset(2.6, -9.6, 0);sk.s=4;});await sleep(150);};
   await resetRun();await p.keyboard.press('Space');await sleep(1300);console.log('after ollie',JSON.stringify(await pr()));
   await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.press('KeyJ');await sleep(1300);console.log('after flip',JSON.stringify(await pr()));
   await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.press('KeyK');await sleep(1300);console.log('after shove',JSON.stringify(await pr()));

@@ -14,7 +14,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const G = () => p.evaluate(() => __dbg.geo);
   const at = (g, al, ac) => { const ux = g.fx - g.rx, uy = g.fy - g.ry, L2 = Math.hypot(ux, uy), nx = ux / L2, ny = uy / L2; return [g.cx + nx * al * L2 / 2 + (-ny) * ac * g.halfW, g.cy + ny * al * L2 / 2 + nx * ac * g.halfW]; };
   const st = () => p.evaluate(() => { const s = __dbg.sk; return { hd: s.heading, spd: s.s, mode: s.mode, combo: __dbg.combo.list.map((e) => e.name).join(','), kp: s.kickPitch }; });
-  const place = async (s) => { await p.evaluate((s) => { const sk = __dbg.sk; __dbg.combo.clear(); sk.reset(1, -12, 0); sk.s = s; __dbg.renderQ.copy(sk.qv); }, s); await sleep(500); };
+  const place = async (s) => { await p.evaluate((s) => { const sk = __dbg.sk; __dbg.combo.clear(); sk.reset(2.6, -9.6, 0); sk.s = s; __dbg.renderQ.copy(sk.qv); }, s); await sleep(500); };
 
   // 0 停着两指压在板子右边：压板不会转 → 出现 Kickturn 提示（前几次才提示）
   await place(0);
@@ -29,9 +29,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const R = Math.hypot(B0[0] - A[0], B0[1] - A[1]), a0 = Math.atan2(B0[1] - A[1], B0[0] - A[0]);
   await send('touchStart', [[A[0], A[1], 1], [B0[0], B0[1], 2]]); await sleep(150);
   const h0 = (await st()).hd; let maxKp = 0;
-  for (let i = 1; i <= 30; i++) { const a = a0 + (1.3 * i) / 30; await send('touchMove', [[A[0], A[1], 1], [A[0] + Math.cos(a) * R, A[1] + Math.sin(a) * R, 2]]); await sleep(16); if (i === 22) maxKp = (await st()).kp; }
+  for (let i = 1; i <= 30; i++) { const a = a0 + (1.5 * i) / 30; await send('touchMove', [[A[0], A[1], 1], [A[0] + Math.cos(a) * R, A[1] + Math.sin(a) * R, 2]]); await sleep(16); if (i === 22) maxKp = (await st()).kp; }
   await sleep(100); let s = await st();
-  ok(h0 - s.hd > 0.5 && s.spd < 0.3, `1 停着拨前指 1.3 rad：板子右转 ${(h0 - s.hd).toFixed(2)} rad，速度 ${s.spd.toFixed(2)}`);
+  ok(h0 - s.hd > 0.5 && s.spd < 0.3, `1 停着拨前指 1.5 rad：板子右转 ${(h0 - s.hd).toFixed(2)} rad，速度 ${s.spd.toFixed(2)}`);
   ok(maxKp > 0.05, `1b 转的时候板头翘起来：${maxKp.toFixed(3)}`);
   await send('touchEnd', []); await sleep(600); s = await st();
   ok(/Kickturn/.test(s.combo), `1c 计入招式：${s.combo}`);

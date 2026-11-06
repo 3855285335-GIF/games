@@ -6,7 +6,7 @@ const L=require('./lib');
   await p.addInitScript((sd)=>{window.__seed=sd;},+(process.env.SEED||777));
   await p.addInitScript(()=>{localStorage.setItem('fs_settings',JSON.stringify({q:0,easy:false,music:false,sfx:false,dots:true}));});
   await p.goto(L.URL);await p.waitForTimeout(1500);
-  for(const map of ['park','roof','yard']){
+  for(const map of ['spot']){
     await p.evaluate((m)=>{window.__noRender=true;__dbg.loadMap(m);__dbg.startGame('free');__dbg.input.enabled=false;},map);
     const out=await p.evaluate(()=>{
       const sk=__dbg.sk,T=__dbg.T,combo=__dbg.combo,B=T.bounds;

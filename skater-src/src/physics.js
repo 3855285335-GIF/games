@@ -4,27 +4,21 @@ import { clamp, TAU, damp } from './util.js';
 import { railClosest } from './terrain.js';
 
 export const G = 9.81;
+// 空中用小一点的重力：滞空更长（像 Touchgrind 一样有时间做动作），跳的高度和以前差不多
+export const G_AIR = 5.5;
+const G_TRANS = 8.2; // 从四分之一管 / 弧形坡飞出去：用接近真实的重力（不然 1.3 米的坡能飞到 3 米高）
 const STEP_TOL = 0.035;          // 能直接滚上去的小坎
-// 力度决定结果：划得越快、拨得越快，跳得越高、转得越快；转多少、停在哪，全看板子实际转到哪、什么时候接
-const POP_MIN = 2.5, POP_RNG = 2.4;            // 起跳速度 2.5～4.9 m/s（高度大约 0.3～1.2 米）
+// 力度决定结果：划得越快跳得越高；拨得越重，板子转得越多、也转得越快，然后自己慢慢停下（不会一直转很多圈）
+const POP_MIN = 2.4, POP_RNG = 1.2;            // 起跳速度 2.4～3.6 m/s（空中重力 5.5：高度约 0.5～1.2 米，滞空约 0.9～1.3 秒）
 const popV = (k) => POP_MIN + POP_RNG * clamp(k || 0, 0, 1);
-const FLIP_W0 = 10, FLIP_W1 = 30;             // 翻板转速 rad/s：轻拨 10（约 0.63 秒一圈），猛拨 30（约 0.21 秒一圈）
-const SHOVE_W0 = 5, SHOVE_W1 = 16;            // 转板转速 rad/s：轻拨 5（约 0.63 秒半圈），猛拨 16
-const CATCH_AHEAD = 1.75, CATCH_BEHIND = 0.6; // 接板：离板面朝上还差 100° 以内，脚会把板子带正；翻过头 35° 以内会压回来；其他角度接住就停在那
-const SHOVE_AHEAD = 1.05, SHOVE_BEHIND = 0.6; // 转板：还差 60° 以内带正，过头 35° 以内压回来
-// 转得很快时，按角度算的接板窗口在时间上会短到人反应不过来：保证至少约 0.11 秒（最多带正 165° / 80°）
-const CATCH_T = 0.11;
-const flipAhead = (w) => Math.min(2.9, Math.max(CATCH_AHEAD, Math.abs(w || 0) * CATCH_T - CATCH_BEHIND));
-const shoveAhead = (w) => Math.min(1.4, Math.max(SHOVE_AHEAD, Math.abs(w || 0) * CATCH_T - SHOVE_BEHIND));
-const LAND_TOL = 0.6;                         // 落地时板子离"正"还差 35° 以内才站得住
-// 最近的"板子正着"的角度：往转的方向还差 ahead 以内 → 带过去；已经过头 behind 以内 → 压回来；都不是 → 停在原地
-function snapTarget(a, dir, unit, ahead, behind) {
-  const k = a / unit, lo = Math.floor(k) * unit, hi = Math.ceil(k) * unit;
-  const fwd = dir >= 0 ? hi : lo, back = dir >= 0 ? lo : hi;
-  if (Math.abs(a - back) <= behind) return back;
-  if (Math.abs(fwd - a) <= ahead) return fwd;
-  return a;
-}
+const FLIP_MIN = 0.45, FLIP_PER_K = 1.6;      // 翻板转几圈 = 0.45 + 1.6 × 力度：力度 0.34 正好一圈，力度 1 大约两圈；轻一点就差一点
+const SHOVE_MIN = 0.45, SHOVE_PER_K = 1.6;    // 转板转几个半圈，同上：力度 0.34 正好半圈（Shove-it），力度 1 大约一整圈（360 Shove-it）
+const MAX_TURNS = 3;                          // 连着拨几次，最多也就转 3 圈
+const SPIN_TAU = 0.2;                         // 拨完板子先转得快、再慢慢停：0.2 秒转完 63%，0.6 秒转完 95%
+const SNAP_TOL = 0.45, SNAP_TOL_S = 0.4;      // 接板时离"正"还差 26°（转板 23°）以内，脚会把板子踩正；差得更多就停在那个歪的角度
+const LAND_TOL = 0.6;                         // 落地时板子离"正"还差 35° 以内才站得住（26°～35° 会晃）
+// 接板：离最近的"正"够近就踩正，不然停在原地
+const snapNear = (a, unit, tol) => { const r = Math.round(a / unit) * unit; return Math.abs(a - r) <= tol ? r : a; };
 // 离最近的"正着"差多少（带正负）
 const offUp = (a, unit) => a - Math.round(a / unit) * unit;
 // 板子轮廓点（板子自己的坐标，原点 = 两个支架下面的地面中点）：板头、板尾、板边、四个轮子底。用来防止板子穿进地面和东西里
@@ -138,6 +132,11 @@ export class Skater {
     if (!active && Math.abs(sl.ang) < 0.04) this.slide = null;
     return s;
   }
+  // 落地时板子还侧着一点（剩下的翻板角）：以低的那边轮子为支点，板子整体要抬高一点，轮子才不会陷进地里
+  groundLift() {
+    if (this.mode !== 'ground' || !this.flipA) return 0;
+    const f = this.flipA; return Math.max(0, 0.1 * Math.abs(Math.sin(f)) - CY * (1 - Math.cos(f)));
+  }
   // 画面用的翘板角度（按板子自身方向；Fakie 时方向相反）
   visPitch() {
     const fk = this.mode === 'air' ? !!(this.air && this.air.fakie) : this.fakie;
@@ -182,27 +181,23 @@ export class Skater {
     if (!a || a.landed || this.hop) return;
     // 离地太近、马上要落地就不再受理
     if (a.t > 0.2 && this.p.y - this.T.height(this.p.x, this.p.z) < 0.18 && this.v.y < 0) return;
-    k = clamp(k == null ? 0.45 : k, 0, 1);
-    if (which === 'front') { this.flipW = clamp(this.flipW + dir * (FLIP_W0 + (FLIP_W1 - FLIP_W0) * k), -FLIP_W1 * 1.25, FLIP_W1 * 1.25); a.flipDir = dir; }
-    else { this.shoveW = clamp(this.shoveW + dir * (SHOVE_W0 + (SHOVE_W1 - SHOVE_W0) * k), -SHOVE_W1 * 1.25, SHOVE_W1 * 1.25); a.shoveDir = dir; }
-    a.flicked = true; a.caught = false; a.autoCatch = clock == null; a.flickClock = clock == null ? null : clock;
+    const auto = clock == null || !!(this.I && this.I.auto);
+    k = clamp(k == null ? 0.34 : k, 0, 1);
+    // 力度 → 要转多少：自动接板（键盘 / 简单模式）时取整圈，好落地
+    let turns = (which === 'front' ? FLIP_MIN + FLIP_PER_K * k : SHOVE_MIN + SHOVE_PER_K * k);
+    if (auto) turns = Math.max(1, Math.round(turns));
+    const live = a.flicked && !a.caught; // 上一下还没接住：接着加
+    if (which === 'front') { a.flipGoal = clamp((live ? a.flipGoal : this.flipA) + dir * turns * TAU, -MAX_TURNS * TAU, MAX_TURNS * TAU); a.flipDir = dir; if (!live) a.shoveGoal = this.shoveA; }
+    else { a.shoveGoal = clamp((live ? a.shoveGoal : this.shoveA) + dir * turns * Math.PI, -MAX_TURNS * TAU, MAX_TURNS * TAU); a.shoveDir = dir; if (!live) a.flipGoal = this.flipA; }
+    a.flicked = true; a.caught = false; a.autoCatch = auto; a.flickClock = clock == null ? null : clock;
     this.cb.onFlick && this.cb.onFlick(which, dir, k);
   }
   // 现在是不是该接板了：拨过之后，有手指重新按回板上（或自动接板）
   _shouldCatch(I) {
     const a = this.air;
     if (a.autoCatch || I.auto) {
-      // 自动接板（键盘 / 简单模式）：每个在转的方向都转到"正"了就接；有一个快要转过头、再不接就来不及时也接；快落地了也接（接不正就摔）
-      const st = (ang, w, unit, ahead, behind) => {
-        if (!w) return [true, 0, 0];
-        const k = ang / unit, d = w > 0 ? 1 : -1, fwd = (d > 0 ? Math.ceil(k) : Math.floor(k)) * unit, back = (d > 0 ? Math.floor(k) : Math.ceil(k)) * unit;
-        const passed = Math.abs(ang - back), rem = Math.abs(fwd - ang);
-        if (back !== 0 && passed <= behind) return [true, -passed / Math.abs(w), passed];
-        if (fwd !== 0 && rem <= ahead) return [true, rem / Math.abs(w), 0];
-        return [false, 0, 0];
-      };
-      const F = st(this.flipA, this.flipW, TAU, flipAhead(this.flipW), CATCH_BEHIND), S = st(this.shoveA, this.shoveW, Math.PI, shoveAhead(this.shoveW), SHOVE_BEHIND);
-      if (F[0] && S[0] && (Math.max(F[1], S[1]) <= 0.004 || F[2] > CATCH_BEHIND * 0.5 || S[2] > SHOVE_BEHIND * 0.5)) return true;
+      // 自动接板（键盘 / 简单模式）：转得差不多了就接；快落地了也接（接不正就摔）
+      if (Math.abs(a.flipGoal - this.flipA) < 0.06 && Math.abs(a.shoveGoal - this.shoveA) < 0.06) return true;
       if (this.v.y < 0) { const hb = this.p.y - this.T.height(this.p.x, this.p.z); if (hb < -this.v.y * 0.09) return true; }
       return false;
     }
@@ -210,9 +205,9 @@ export class Skater {
   }
   _catch() {
     const a = this.air; a.caught = true; a.catchT = a.t;
-    const fd = this.flipW ? Math.sign(this.flipW) : a.flipDir || 1, sd = this.shoveW ? Math.sign(this.shoveW) : a.shoveDir || 1;
-    this.flipT = snapTarget(this.flipA, fd, TAU, flipAhead(this.flipW), CATCH_BEHIND);
-    this.shoveT = snapTarget(this.shoveA, sd, Math.PI, shoveAhead(this.shoveW), SHOVE_BEHIND);
+    // 手指按回板上 = 脚踩住：板子当场停下；离"正"够近就踩正
+    this.flipT = snapNear(this.flipA, TAU, SNAP_TOL);
+    this.shoveT = snapNear(this.shoveA, Math.PI, SNAP_TOL_S);
     a.catchErr = Math.max(Math.abs(this.flipT - this.flipA), Math.abs(this.shoveT - this.shoveA));
     this.flipW = this.shoveW = 0;
     this.cb.onCatch && this.cb.onCatch(a.catchErr);
@@ -220,14 +215,13 @@ export class Skater {
   // 拨过板之后：现在按回板上能不能接正（给提示圈用）。0 = 现在接会摔，越接近 1 越正
   catchHint() {
     const a = this.air; if (this.mode !== 'air' || !a || !a.flicked || a.caught) return 0;
-    const one = (ang, w, dir, unit, aheadOf, behind) => {
-      const ahead = aheadOf(w);
-      if (!w && Math.abs(ang) < 1e-6) return 1; // 这个方向没拨
-      const t = snapTarget(ang, w ? Math.sign(w) : dir || 1, unit, ahead, behind);
-      if (t === ang || Math.abs(t) < 1e-6) return 0; // 接了停在歪的角度 / 一圈都没转够
-      const d = t - ang; return 1 - Math.abs(d) / (d * (w || 1) > 0 ? ahead : behind) * 0.7;
+    const one = (ang, goal, unit, tol) => {
+      if (Math.abs(goal) < 1e-6 && Math.abs(ang) < 1e-6) return 1; // 这个方向没拨
+      const r = Math.round(ang / unit) * unit;
+      if (Math.abs(r) < 1e-6) return 0; // 还没转到第一个"正"
+      const d = Math.abs(ang - r); return d <= tol ? 1 - (d / tol) * 0.7 : 0;
     };
-    return Math.min(one(this.flipA, this.flipW, a.flipDir, TAU, flipAhead, CATCH_BEHIND), one(this.shoveA, this.shoveW, a.shoveDir, Math.PI, shoveAhead, SHOVE_BEHIND));
+    return Math.min(one(this.flipA, a.flipGoal, TAU, SNAP_TOL), one(this.shoveA, a.shoveGoal, Math.PI, SNAP_TOL_S));
   }
   // 空中这块板子还要不要接（给提示圈用）
   needsCatch(I) {
@@ -427,7 +421,13 @@ export class Skater {
     const kick = I.kick || 0;
     if (kick && !this.slide && !this.manual) {
       const kk = clamp((KICK_S1 - s) / (KICK_S1 - KICK_S0), 0, 1);
-      if (kk > 0) { this.heading += kick * kk; this.kickAcc += Math.abs(kick) * kk; this.kickT = 0.28; }
+      if (kk > 0) {
+        // 像真的 Kickturn 一样绕着后轮（按住板头时绕前轮）转：那一头的轮子不动，板子另一头甩过去（手指一直在板子上）
+        const pv = (I.kickPivot === 1 ? 1 : -1) * (this.fakie ? -1 : 1) * TRUCK_Z * (kk < 1 ? kk : 1);
+        const hx = Math.sin(this.heading), hz = Math.cos(this.heading), px = this.p.x + hx * pv, pz = this.p.z + hz * pv;
+        this.heading += kick * kk; this.kickAcc += Math.abs(kick) * kk; this.kickT = 0.28;
+        this.p.x = px - Math.sin(this.heading) * pv; this.p.z = pz - Math.cos(this.heading) * pv;
+      }
     }
     if (this.kickT > 0) {
       this.kickT -= dt;
@@ -577,7 +577,7 @@ export class Skater {
       const gl = Math.hypot(gx, gz);
       if (gl > 0.5) {
         const ux = gx / gl, uz = gz / gl, vu = this.v.x * ux + this.v.z * uz;
-        const tAir = Math.max(0.25, (2 * this.v.y) / G), want = -0.1 / tAir;
+        const tAir = Math.max(0.25, (2 * this.v.y) / G_TRANS), want = -0.1 / tAir;
         this.v.x += (want - vu) * ux; this.v.z += (want - vu) * uz;
       }
     }
@@ -595,7 +595,7 @@ export class Skater {
     this.spin = 0; this.flipA = this.flipT = this.shoveA = this.shoveT = 0; this.flipW = this.shoveW = 0;
     const lipY = feat && feat.trans ? (feat.t === 'bowl' ? 0 : feat.hl) : null;
     this.air = { t: 0, feat: feat || null, popped: !!popKind, pop: popKind, fakie: this.fakie, y0: this.p.y, maxY: this.p.y, lipY, fromTrans: !!(feat && feat.trans), fromGrind: !!fromGrind, wasManual,
-      flicked: false, caught: false, autoCatch: false, flickClock: null, flipDir: 0, shoveDir: 0, catchErr: 0 };
+      flicked: false, caught: false, autoCatch: false, flickClock: null, flipDir: 0, shoveDir: 0, catchErr: 0, flipGoal: 0, shoveGoal: 0 };
     if (popKind) {
       this.popPitch = popKind === 'nose' ? -0.45 : 0.45;
       this.cb.onPop && this.cb.onPop(popKind);
@@ -616,9 +616,11 @@ export class Skater {
     const qa0 = tq0.copy(this.qa), f0 = this.flipA, s0 = this.shoveA, sp0 = this.spin; // 这一步转之前的样子（转进墙里时退回去）
     const dSpin = (I.twist || 0) + (I.spinRate || 0) * dt;
     if (dSpin) { this.spin += dSpin; qt.setFromAxisAngle(Y, dSpin); this.qa.multiply(qt); }
-    // 翻板 / 转板：没接住之前按自己的转速一直转；接住后停下，靠近"正"的会被脚带正（很快，大约 0.1 秒）
+    // 翻板 / 转板：拨完先转得快、再慢慢停在力度决定的角度；接住后当场停下，离"正"够近的被脚踩正（很快，大约 0.1 秒）
     if (a.flicked && !a.caught) {
-      this.flipA += this.flipW * dt; this.shoveA += this.shoveW * dt;
+      const kk = 1 - Math.exp(-dt / SPIN_TAU);
+      const df = (a.flipGoal - this.flipA) * kk, ds = (a.shoveGoal - this.shoveA) * kk;
+      this.flipA += df; this.shoveA += ds; this.flipW = df / dt; this.shoveW = ds / dt;
       this.flipT = this.flipA; this.shoveT = this.shoveA;
       if (this._shouldCatch(I)) this._catch();
     } else if (a.caught) {
@@ -627,7 +629,7 @@ export class Skater {
     }
     this.popPitch *= Math.exp(-7 * dt);
     this.manPitch *= Math.exp(-12 * dt);
-    this.v.y -= G * dt;
+    this.v.y -= (a.fromTrans ? G_TRANS : G_AIR) * dt;
     const vl = this.v.length(); if (vl > 25) this.v.multiplyScalar(25 / vl);
     // 安全网：卡在物体里 → 推出来；掉出世界或空中太久 → 复活
     let hNow = T.height(this.p.x, this.p.z);
@@ -839,7 +841,7 @@ export class Skater {
       const hl = Math.hypot(r.dx, r.dz); if (hl < 0.35) continue;
       const ca = (r.dx * fx + r.dz * fz) / hl; if (Math.abs(ca) < 0.5) continue;
       const c = railClosest(r, px, pz);
-      if (c.d > 1.4) continue;
+      if (c.d > 0.9) continue; // 场地小、杆子到处都是：离得够近（0.9 米内）才提示 / 长按吸上去，免得接完板按着手指就被旁边的杆子吸过去
       const dy = c.y - this.p.y; if (dy < -0.45 || dy > 1.1) continue;
       if ((c.x - px) * fx + (c.z - pz) * fz < -0.35) continue;
       const dir = Math.sign(ca), dur = clamp(0.24 + (c.d + Math.max(0, dy)) * 0.07, 0.24, 0.36), spA = sp * Math.abs(ca);

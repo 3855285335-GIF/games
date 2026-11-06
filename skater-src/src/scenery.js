@@ -1,5 +1,5 @@
 // 整张地图的画面：障碍物 + 道具 + 地面贴花 + 围墙 + 周边（草地树木 / 城市楼群）+ 路灯
-import { Mesh, MeshStandardMaterial, MeshBasicMaterial, Shape, Path, ShapeGeometry, CylinderGeometry, BoxGeometry, IcosahedronGeometry, PlaneGeometry, Matrix4, Group, DoubleSide, AdditiveBlending, Color } from 'three';
+import { Vector2, Mesh, MeshStandardMaterial, MeshBasicMaterial, Shape, Path, ShapeGeometry, CylinderGeometry, BoxGeometry, IcosahedronGeometry, PlaneGeometry, Matrix4, Group, DoubleSide, AdditiveBlending, Color } from 'three';
 import { MB, between } from './meshkit.js';
 import { toWorld } from './terrain.js';
 import { buildQP, buildRamp, buildBox, buildStairs, buildPyr, buildBowl, bowlHolePath, buildRails } from './parkmesh.js';
@@ -12,10 +12,13 @@ export function getMats(renderer) {
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const t = (x) => { x.anisotropy = aniso; return x; };
   const win = [TX.windows(5, '#9aa3ad'), TX.windows(6, '#b8ab98'), TX.windows(8, '#7f93a6')];
+  // 水泥：高清贴图 + 凹凸（地面粗一点、坡面抹得光一点，有一点点反光）
+  const cg = TX.concreteHD(1, '#93918c', 0, true, 2048), ct = TX.concreteHD(2, '#b9b7b2', 1, false, 1024), cs = TX.concreteHD(3, '#9a9893', 0, false, 1024);
+  const nm = (o, k) => { t(o.map); t(o.normalMap); return { map: o.map, normalMap: o.normalMap, normalScale: new Vector2(k, k) }; };
   M = {
-    ground: new MeshStandardMaterial({ map: t(TX.concrete(1, '#b7b5af', true)), roughness: 0.92 }),
-    trans: new MeshStandardMaterial({ map: t(TX.concrete(2, '#c8c6c0', false)), roughness: 0.78 }),
-    side: new MeshStandardMaterial({ map: t(TX.concrete(3, '#a19f99', false)), roughness: 0.95 }),
+    ground: new MeshStandardMaterial({ ...nm(cg, 0.7), roughness: 0.86 }),
+    trans: new MeshStandardMaterial({ ...nm(ct, 0.5), roughness: 0.62 }),
+    side: new MeshStandardMaterial({ ...nm(cs, 0.7), roughness: 0.9 }),
     wood: new MeshStandardMaterial({ map: t(TX.plywood(4)), roughness: 0.7 }),
     tile: new MeshStandardMaterial({ map: t(TX.tiles()), roughness: 0.35 }),
     metal: new MeshStandardMaterial({ color: 0xd2d6dc, metalness: 0.95, roughness: 0.28 }),
@@ -104,6 +107,16 @@ function buildWalls(T, B, theme) {
       let mh = 0;
       for (let k = 0; k <= 4; k++) { const t = k / 4; mh = Math.max(mh, T.height(ax + (bx - ax) * t - nx * 0.3, az + (bz - az) * t - nz * 0.3)); }
       const h = mh + base, ox = nx * 0.25, oz = nz * 0.25;
+      if (theme.outside === 'hdr') {
+        // 城市广场：矮水泥墙（里外两面 + 顶面）+ 镀锌钢栏杆，外面就是真实的广场照片
+        B.side.poly([[ax, 0, az], [bx, 0, bz], [bx, h, bz], [ax, h, az]], [-nx, 0, -nz]);
+        B.side.poly([[bx + nx * 0.4, 0, bz + nz * 0.4], [ax + nx * 0.4, 0, az + nz * 0.4], [ax + nx * 0.4, h, az + nz * 0.4], [bx + nx * 0.4, h, bz + nz * 0.4]], [nx, 0, nz]);
+        B.trans.poly([[ax + nx * 0.4, h, az + nz * 0.4], [bx + nx * 0.4, h, bz + nz * 0.4], [bx, h, bz], [ax, h, az]], [0, 1, 0]);
+        B.steel.addGeo(new CylinderGeometry(0.03, 0.03, 1, 8), between(ax + ox * 0.8, h, az + oz * 0.8, ax + ox * 0.8, h + 0.95, az + oz * 0.8));
+        B.metal.addGeo(new CylinderGeometry(0.024, 0.024, 1, 8), between(ax + ox * 0.8, h + 0.95, az + oz * 0.8, bx + ox * 0.8, h + 0.95, bz + oz * 0.8));
+        B.metal.addGeo(new CylinderGeometry(0.014, 0.014, 1, 6), between(ax + ox * 0.8, h + 0.5, az + oz * 0.8, bx + ox * 0.8, h + 0.5, bz + oz * 0.8));
+        continue;
+      }
       B.wall.poly([[ax, 0, az], [bx, 0, bz], [bx, h, bz], [ax, h, az]], [-nx, 0, -nz]);
       B.side.poly([[ax + nx * 0.5, h, az + nz * 0.5], [bx + nx * 0.5, h, bz + nz * 0.5], [bx, h, bz], [ax, h, az]], [0, 1, 0]);
       if (theme.fence === 'wood') {
@@ -148,7 +161,10 @@ function buildOutside(T, B, theme, group, mats) {
   const R = rng(T.id === 'roof' ? 99 : 11), { minX, maxX, minZ, maxZ } = T.bounds;
   const inside = (x, z, m) => x > minX - m && x < maxX + m && z > minZ - m && z < maxZ + m;
   const lamps = [];
-  if (theme.outside === 'grass') {
+  if (theme.outside === 'hdr') {
+    // 远处是照片，不用再造树和楼；四个角放路灯（夜晚亮）
+    for (const [x, z] of [[minX - 1, minZ - 1], [maxX + 1, minZ - 1], [minX - 1, maxZ + 1], [maxX + 1, maxZ + 1]]) lamps.push([x, z, 6]); // 放在墙外，不挡路
+  } else if (theme.outside === 'grass') {
     for (let i = 0; i < 90; i++) {
       let x, z, k = 0;
       do { const a = R() * Math.PI * 2, d = 40 + R() * 80; x = Math.cos(a) * d; z = Math.sin(a) * d * 1.2; k++; } while (inside(x, z, 6) && k < 20);
@@ -189,7 +205,7 @@ function buildOutside(T, B, theme, group, mats) {
     for (const [x, z] of [[minX + 1, minZ + 1], [maxX - 1, minZ + 1], [minX + 1, maxZ - 1], [maxX - 1, maxZ - 1]]) lamps.push([x, z, 5]);
   }
   for (const [x, z, h] of lamps) {
-    const g = T.height(Math.max(minX, Math.min(maxX, x)), Math.max(minZ, Math.min(maxZ, z)));
+    const g = theme.outside === 'hdr' ? 0 : T.height(Math.max(minX, Math.min(maxX, x)), Math.max(minZ, Math.min(maxZ, z)));
     B.lamp.addGeo(new CylinderGeometry(0.1, 0.14, h, 8), new Matrix4().makeTranslation(x, g + h / 2, z));
     B.lampHead.addGeo(new BoxGeometry(1.2, 0.25, 0.45), new Matrix4().makeTranslation(x, g + h + 0.1, z));
   }

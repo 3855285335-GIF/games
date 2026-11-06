@@ -290,3 +290,90 @@ export function deckSwatch(i, w, h) {
   t.dispose();
   return c.toDataURL();
 }
+
+/* ---------------- 高清水泥（真实感）：大片的深浅斑驳 + 细砂颗粒 + 小石子 + 抹刀痕 + 切缝；同时出一张法线贴图（凹凸），灯光一照就有颗粒感 ---------------- */
+// 可平铺的值噪声：period = 每边多少格
+function vnoise(S, period, R) {
+  const g = new Float32Array(period * period); for (let i = 0; i < g.length; i++) g[i] = R();
+  const out = new Float32Array(S * S), cell = S / period;
+  for (let y = 0; y < S; y++) {
+    const fy = y / cell, iy = Math.floor(fy), ty0 = fy - iy, ty = ty0 * ty0 * (3 - 2 * ty0), y0 = (iy % period) * period, y1 = ((iy + 1) % period) * period;
+    for (let x = 0; x < S; x++) {
+      const fx = x / cell, ix = Math.floor(fx), tx0 = fx - ix, tx = tx0 * tx0 * (3 - 2 * tx0), x0 = ix % period, x1 = (ix + 1) % period;
+      const a = g[y0 + x0], b = g[y0 + x1], c = g[y1 + x0], d = g[y1 + x1];
+      out[y * S + x] = a + (b - a) * tx + (c - a + (a - b - c + d) * tx) * ty;
+    }
+  }
+  return out;
+}
+function fbm(S, periods, amps, R) {
+  const out = new Float32Array(S * S);
+  periods.forEach((p, k) => { const n = vnoise(S, p, R), a = amps[k]; for (let i = 0; i < out.length; i++) out[i] += (n[i] - 0.5) * a; });
+  return out;
+}
+// 小图双线性放大到大图（可平铺）
+function upsample(src, s, S) {
+  const out = new Float32Array(S * S), k = s / S;
+  for (let y = 0; y < S; y++) {
+    const fy = y * k, y0 = Math.floor(fy), ty = fy - y0, r0 = (y0 % s) * s, r1 = ((y0 + 1) % s) * s;
+    for (let x = 0; x < S; x++) {
+      const fx = x * k, x0 = Math.floor(fx), tx = fx - x0, c0 = x0 % s, c1 = (x0 + 1) % s;
+      const a = src[r0 + c0], b = src[r0 + c1], c = src[r1 + c0], d = src[r1 + c1];
+      out[y * S + x] = a + (b - a) * tx + (c - a + (a - b - c + d) * tx) * ty;
+    }
+  }
+  return out;
+}
+const DT = (c, srgb) => { const t = new CanvasTexture(c); if (srgb) t.colorSpace = SRGBColorSpace; t.wrapS = t.wrapT = RepeatWrapping; return t; };
+// base：底色（#rrggbb）；smooth：0 = 地面（粗一点），1 = 坡面（抹得光一点）；joints：贴图边上画切缝（每张 = 4 米）
+export function concreteHD(seed, base, smooth, joints, S) {
+  S = S || 2048;
+  const R = rng(seed), s = 256;
+  const lo = upsample(fbm(s, [3, 6, 12, 24, 48], [1, 0.6, 0.35, 0.2, 0.12], R), s, S); // 大片斑驳（几十厘米到几米）
+  const stain = upsample(fbm(s, [4, 8, 16], [1, 0.5, 0.25], R), s, S);              // 水渍 / 脏的地方
+  const mid = vnoise(S, 256, R);                                                    // 几厘米的起伏
+  const r0 = parseInt(base.slice(1, 3), 16), g0 = parseInt(base.slice(3, 5), 16), b0 = parseInt(base.slice(5, 7), 16);
+  const [c, x] = cv(S, S), img = x.createImageData(S, S), d = img.data, H = new Float32Array(S * S);
+  const grain = smooth ? 0.035 : 0.06, rr = Math.random;
+  for (let i = 0; i < S * S; i++) {
+    const w = rr(), sp = w < 0.012 ? -0.18 * (0.5 + rr()) : w > 0.994 ? 0.12 * rr() : 0; // 小石子（深）和亮点
+    let v = 1 + lo[i] * 0.11 + (mid[i] - 0.5) * 0.06 + (rr() - 0.5) * grain + sp;
+    const st = stain[i]; if (st > 0.22) v -= (st - 0.22) * 0.22;                  // 深色的水渍（淡一点，不然像云的影子）
+    d[i * 4] = Math.min(255, r0 * v); d[i * 4 + 1] = Math.min(255, g0 * v); d[i * 4 + 2] = Math.min(255, b0 * (v * 0.98 + 0.02)); d[i * 4 + 3] = 255;
+    H[i] = (mid[i] - 0.5) * 0.6 + (rr() - 0.5) * (smooth ? 0.35 : 0.7) + (sp < 0 ? -1.2 : 0); // 凹凸：细砂 + 小坑
+  }
+  // 抹刀痕（坡面明显，地面淡一些）：一道道很淡的弧形亮纹
+  const tr = rng(seed + 7);
+  for (let k = 0; k < (smooth ? 40 : 0); k++) { // 地面不画（画出来像一圈圈白线），坡面只画很淡的几道
+    const cx = tr() * S, cy = tr() * S, rad = 60 + tr() * 220, a0 = tr() * 6.28, al = 0.6 + tr() * 1.2, inten = 1.6 * (0.5 + tr());
+    for (let t = 0; t < 1; t += 1 / (rad * al)) {
+      const a = a0 + t * al, px = ((cx + Math.cos(a) * rad) % S + S) % S | 0, py = ((cy + Math.sin(a) * rad) % S + S) % S | 0;
+      for (let w2 = -1; w2 <= 1; w2++) { const o = ((py + w2 + S) % S) * S + px; d[o * 4] = Math.min(255, d[o * 4] + inten); d[o * 4 + 1] = Math.min(255, d[o * 4 + 1] + inten); d[o * 4 + 2] = Math.min(255, d[o * 4 + 2] + inten); }
+    }
+  }
+  if (joints) { // 切缝：4 米一道，深色的槽
+    for (let y = 0; y < S; y++) for (const xx of [0, 1, 2, S - 1]) { const o = y * S + xx; d[o * 4] *= 0.45; d[o * 4 + 1] *= 0.45; d[o * 4 + 2] *= 0.45; H[o] -= 3; }
+    for (const yy of [0, 1, 2, S - 1]) for (let xx = 0; xx < S; xx++) { const o = yy * S + xx; d[o * 4] *= 0.45; d[o * 4 + 1] *= 0.45; d[o * 4 + 2] *= 0.45; H[o] -= 3; }
+  }
+  x.putImageData(img, 0, 0);
+  // 法线贴图（只要一半分辨率就够）
+  const N = S / 2, [cn, xn] = cv(N, N), ni = xn.createImageData(N, N), nd = ni.data, k = smooth ? 0.9 : 1.6;
+  const h = (xx, yy) => H[((yy * 2 + S) % S) * S + ((xx * 2 + S) % S)];
+  for (let y = 0; y < N; y++) for (let x2 = 0; x2 < N; x2++) {
+    const dx = (h(x2 + 1, y) - h(x2 - 1, y)) * k, dy = (h(x2, y + 1) - h(x2, y - 1)) * k, l = Math.hypot(dx, dy, 8);
+    const o = (y * N + x2) * 4; nd[o] = 128 - (dx / l) * 127; nd[o + 1] = 128 + (dy / l) * 127; nd[o + 2] = 128 + (8 / l) * 127; nd[o + 3] = 255;
+  }
+  xn.putImageData(ni, 0, 0);
+  return { map: DT(c, true), normalMap: DT(cn, false) };
+}
+// 砂纸的凹凸（颗粒在灯下一闪一闪）
+export function gripNormal() {
+  const W = 256, H = 1024, [c, x] = cv(W, H), img = x.createImageData(W, H), d = img.data, R = rng(77);
+  const h = new Float32Array(W * H); for (let i = 0; i < h.length; i++) h[i] = R();
+  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+    const dx = h[y * W + ((xx + 1) % W)] - h[y * W + ((xx - 1 + W) % W)], dy = h[((y + 1) % H) * W + xx] - h[((y - 1 + H) % H) * W + xx], l = Math.hypot(dx, dy, 1.2);
+    const o = (y * W + xx) * 4; d[o] = 128 - (dx / l) * 127; d[o + 1] = 128 + (dy / l) * 127; d[o + 2] = 128 + (1.2 / l) * 127; d[o + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  const t = new CanvasTexture(c); t.wrapS = t.wrapT = RepeatWrapping; return t;
+}

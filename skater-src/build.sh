@@ -7,7 +7,7 @@ THREE=/home/claude/mrdoob/three.js/build/three.module.js; [ -f "$THREE" ] || THR
 [ -f "$THREE" ] || { echo "缺 three.js：先在这个文件夹运行 npm install three@0.187.0"; exit 1; }
 mkdir -p out
 $ESB src/main.js --bundle --minify --format=iife --target=es2020,safari15 \
-  --alias:three="$THREE" --legal-comments=none --outfile=out/game.js --log-level=warning
+  --alias:three="$THREE" --loader:.jpg=dataurl --loader:.txt=text --legal-comments=none --outfile=out/game.js --log-level=warning
 python3 - <<'PY'
 head=open('tpl/head.html').read(); body=open('tpl/body.html').read(); js=open('out/game.js').read()
 js=js.replace('</script','<\\/script')

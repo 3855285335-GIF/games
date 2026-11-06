@@ -22,7 +22,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     return billed;
   }
   // 持续转圈：W + D（转弯 → 全速 4 条/秒）
-  const circle = async (p) => { await p.evaluate(() => { const sk = __dbg.sk; sk.reset(-6, -14, 0); sk.s = 3; }); await p.keyboard.down('KeyW'); await p.keyboard.down('KeyD'); };
+  const circle = async (p) => { await p.evaluate(() => { const sk = __dbg.sk; sk.T = new __dbg.T.constructor({ minX: -300, maxX: 300, minZ: -300, maxZ: 300 }); sk.reset(0, 0, 0); sk.s = 3; }); await p.keyboard.down('KeyW'); await p.keyboard.down('KeyD'); };
   const A = await mk('Alice'), B = await mk('Bob'); await sleep(2000);
   // 在 B 的画面里逐帧记录 A 的位置，检查平滑
   // 在 B 的画面里，每次游戏更新完远程玩家后记录 A 的位置（和画面同一时刻）
@@ -37,11 +37,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   }
   ok(trk.length > 100 && nan === 0 && maxJerk < 2.5, `B 看 A 转圈：${trk.length} 帧，速度突变最大 ${maxJerk.toFixed(2)} m/s（越小越顺），NaN ${nan}`);
   for (const p of [A, B]) { await p.keyboard.up('KeyD'); await p.keyboard.up('KeyW'); }
+  // （联机测试只测联机：板子都放到一大片空地上，免得在小场地里撞墙复活、位置突变）
   // 平地直线稳定滑行（少发：4 × 0.6 = 2.4 条/秒）
-  const straight = async (p, i) => { await p.evaluate((i) => { const sk = __dbg.sk; sk.reset(-20 + i * 3, -30, Math.PI / 2); sk.s = 2.2; }, i); };
+  const straight = async (p, i) => { await p.evaluate((i) => { const sk = __dbg.sk; sk.T = new __dbg.T.constructor({ minX: -300, maxX: 300, minZ: -300, maxZ: 300 }); sk.reset(-10, 6 - i * 0.9, Math.PI / 2); sk.s = 2.2; }, i); };
   await measure('2 人直线滑行', [A, B], straight, 5, 2.4, 0.5);
   // 一直 Ollie（起跳/落地各补发一条）
-  const ollie = async (p, i) => { await p.evaluate((i) => { const sk = __dbg.sk; sk.reset(-6 + i * 4, -14, 0); sk.s = 2; window.__ol = setInterval(() => { const sk = __dbg.sk; if (sk.mode === 'ground') { sk.s = 2; sk.pop('tail', 1); } }, 1100); }, i); };
+  const ollie = async (p, i) => { await p.evaluate((i) => { const sk = __dbg.sk; sk.T = new __dbg.T.constructor({ minX: -300, maxX: 300, minZ: -300, maxZ: 300 }); sk.reset(2.6 - i * 5, -9.6, 0); sk.s = 2; window.__ol = setInterval(() => { const sk = __dbg.sk; if (sk.mode === 'ground') { sk.s = 2; sk.pop('tail', 1); } }, 1100); }, i); };
   await measure('2 人反复 Ollie', [A, B], ollie, 6, 4.8, 1.0);
   for (const p of [A, B]) await p.evaluate(() => clearInterval(window.__ol));
   // 3 人转圈（32/9 = 3.56 条/秒）

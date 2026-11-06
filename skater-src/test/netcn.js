@@ -20,7 +20,7 @@ const waitFor = async (fn, ms, step = 200) => { const t0 = Date.now(); while (Da
   const track = (B) => B.evaluate(() => { window.__trk = []; const o = __dbg.online, u = o.update.bind(o); o.update = (dt, now, c) => { u(dt, now, c); const r = [...o.remotes.values()][0]; if (r && __trk.length < 300) __trk.push([r.board.root.position.x, r.board.root.position.z, now, r.R.snaps.length ? r.R.snaps[r.R.snaps.length - 1].t : 0]); }; });
   const rate = async (B) => { const t = await B.evaluate(() => __trk); const ts = [...new Set(t.map((x) => x[3]))]; const span = (ts[ts.length - 1] - ts[0]) / 1000; return { hz: span > 0 ? +((ts.length - 1) / span).toFixed(1) : 0, n: t.length }; };
   const wsB = () => Object.values(M.log.ev).reduce((a, b2) => a + b2, 0) + Object.values(M.log.hev).reduce((a, b2) => a + b2, 0);
-  const circle = async (p) => { await p.evaluate(() => { const sk = __dbg.sk; sk.reset(-6, -14, 0); sk.s = 3; }); await p.keyboard.down('KeyW'); await p.keyboard.down('KeyD'); };
+  const circle = async (p) => { await p.evaluate(() => { const sk = __dbg.sk; sk.T = new __dbg.T.constructor({ minX: -300, maxX: 300, minZ: -300, maxZ: 300 }); sk.reset(0, 0, 0); sk.s = 3; }); await p.keyboard.down('KeyW'); await p.keyboard.down('KeyD'); };
 
   // ---------- 1 全员国内：实时通道都连不上 → 数据库牵线 + 玩家直连 ----------
   {

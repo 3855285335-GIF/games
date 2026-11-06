@@ -4,7 +4,7 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const ctx=await b.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,hasTouch:true,isMobile:true});
   const M=await L.mock(ctx);const errs=[];
   const mk=async(name,map)=>{const p=await ctx.newPage();L.errs(p,errs,name+': ');
-    await p.addInitScript((m)=>{localStorage.setItem('fs_pracDone','true');localStorage.setItem('fs_map',JSON.stringify(m));localStorage.setItem('fs_settings',JSON.stringify({q:0,easy:false,music:false,sfx:false,dots:true,time:'day'}));},map||'park');
+    await p.addInitScript((m)=>{localStorage.setItem('fs_pracDone','true');localStorage.setItem('fs_map',JSON.stringify(m));localStorage.setItem('fs_settings',JSON.stringify({q:0,easy:false,music:false,sfx:false,dots:true,time:'day'}));},map||'spot');
     await p.goto(L.URL);await p.waitForTimeout(1200);await p.evaluate(()=>{window.__noRender=true;});
     await p.fill('#inName',name);await p.fill('#inRoom','测试房');await p.evaluate(()=>document.getElementById('inRoom').dispatchEvent(new Event('change')));return p;};
   const A=await mk('Alice'),B=await mk('Bob');
@@ -17,9 +17,9 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   // 表情
   await A.tap('#bEmo');await A.locator('#emobar span').nth(1).tap();await sleep(500);
   console.log('emoji on B:',await B.evaluate(()=>[...document.querySelectorAll('.emo')].map(e=>e.textContent)));
-  // 不同地图不应该互相看见
-  const D=await mk('Dan','roof');await D.tap('#mFree');await sleep(2000);
-  console.log('Dan(roof) sees',await D.evaluate(()=>[...__dbg.remotes.values()].map(r=>r.R.name)),'| A still sees',await A.evaluate(()=>[...__dbg.remotes.values()].map(r=>r.R.name)));
+  // 不同房间不应该互相看见（现在只有一张地图）
+  const D=await mk('Dan');await D.fill('#inRoom','别的房');await D.evaluate(()=>document.getElementById('inRoom').dispatchEvent(new Event('change')));await D.tap('#mFree');await sleep(2000);
+  console.log('Dan(other room) sees',await D.evaluate(()=>[...__dbg.remotes.values()].map(r=>r.R.name)),'| A still sees',await A.evaluate(()=>[...__dbg.remotes.values()].map(r=>r.R.name)));
   await D.close();
   // S.K.A.T.E.：A 发起，B、C 加入
   await A.evaluate(()=>__dbg.sk8.host());await sleep(800);

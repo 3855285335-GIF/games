@@ -16,7 +16,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   // 1 两个新版：直连后用紧凑格式
   const A = await mk('Alice', 'w1'), B = await mk('Bob', 'w1');
   ok(await waitLinks([A, B], 12000), '1a 两个新版直连上了');
-  await A.evaluate(() => { const sk = __dbg.sk; sk.reset(-6, -14, 0); sk.s = 4; });
+  await A.evaluate(() => { const sk = __dbg.sk; sk.T = new __dbg.T.constructor({ minX: -300, maxX: 300, minZ: -300, maxZ: 300 }); sk.reset(0, 0, 0); sk.s = 4; }); // 场地小，一直推着滑会撞墙：A 换成一大片空地（这里只测联机）
   await A.keyboard.down('KeyW'); await A.keyboard.down('KeyD'); await sleep(2500);
   // A 做个招式（让 B 那边显示招式名）
   await A.evaluate(() => { __dbg.combo.add('Kickflip', 120); __dbg.combo.bank(); });

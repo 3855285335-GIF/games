@@ -75,7 +75,7 @@ addEventListener('resize', resize); addEventListener('orientationchange', () => 
 /* ---------------- 地图 ---------------- */
 // 这一版新增「小院」：第一次打开时默认进小院（之后记住玩家自己选的地图）
 if (store.get('mapv', 0) < 2) { store.set('map', 'yard'); store.set('mapv', 2); }
-let mapId = MAPS.some((m) => m.id === store.get('map', 'yard')) ? store.get('map', 'yard') : 'yard';
+let mapId = MAPS.some((m) => m.id === store.get('map', 'spot')) ? store.get('map', 'spot') : MAPS[0].id;
 let T = buildMap(mapId), world = buildScene(T, renderer); scene.add(world.group);
 let WOOD = new Set(T.feats.filter((f) => f.mat === 'wood'));
 function applyTime() { lighting.apply(settings.time === 'auto' ? T.theme.time : settings.time); }
@@ -200,9 +200,7 @@ function checkLandChal(info, tr) {
   if (/(^|\s)360 Flip/.test(n)) completeChal('tre');
   if (/Nollie/.test(n)) completeChal('nollie');
   if (Math.abs(info.spin) >= Math.PI * 2 - 0.65) completeChal('spin');
-  if (info.air.fromTrans && info.air.lipY === 0 && info.above >= 0.8) completeChal('bowl');
   if (info.air.fromTrans && info.air.lipY > M.bigQP && info.above >= 1.2) completeChal('vert');
-  if (info.air.feat === M.gapFrom && (info.landFeat === M.gapTo || (M.gapPastZ != null && sk.p.z > M.gapPastZ && Math.abs(sk.p.x - M.gapFrom.x) < 4))) completeChal(T.id === 'park' ? 'gap' : 'roofgap');
   const S = M.stairs;
   if (info.air.popped && info.air.y0 > S.top && info.y < 0.05 && sk.p.z > S.zMin && sk.p.x > S.x0 && sk.p.x < S.x1) completeChal('stairs');
 }
@@ -334,7 +332,8 @@ function kickTipFrame(dt, I) {
 
 /* ---------------- 相机 ---------------- */
 let camInit = false, camYaw = 0, orbitA = 0, camAir = null, camAirVert = false;
-const camPos = new Vector3(), look = new Vector3(), tmpV = new Vector3(), tmpV2 = new Vector3(), projV = new Vector3();
+let camBlend = 0;
+const camPos = new Vector3(), look = new Vector3(), tmpV = new Vector3(), tmpV2 = new Vector3(), projV = new Vector3(), tmpP = new Vector3();
 function project(x, y, z) {
   projV.set(x, y, z).project(cam);
   return [(projV.x * 0.5 + 0.5) * innerWidth, (1 - (projV.y * 0.5 + 0.5)) * innerHeight, projV.z];
@@ -354,8 +353,8 @@ function previewPose(dt) {
 }
 function updateCamera(dt, P, travel, opts) {
   const portrait = cam.aspect < 1, grind = sk.mode === 'grind';
-  // 镜头离板子近一点：板子在屏幕上更大，手指不容易滑出去
-  const dist = (portrait ? 1.0 : 0.95) + (grind ? 0.25 : 0), hgt = (portrait ? 0.62 : 0.58) + (grind ? 0.1 : 0);
+  // 镜头像 Touchgrind 一样贴着板子、压低：板子在屏幕上又大又长（板尾在屏幕下方 88% 左右，板头在中间），远处的地平线在上面 1/4
+  const dist = (portrait ? 0.86 : 0.9) + (grind ? 0.25 : 0), hgt = (portrait ? 0.66 : 0.58) + (grind ? 0.1 : 0);
   const sp = sk.speed();
   // 只有从坡上“几乎竖直”飞出去才算 vert；跳台（30° 小坡）这种往前飞的按普通腾空处理
   if (!opts && sk.mode === 'air' && sk.air !== camAir) { camAir = sk.air; camAirVert = !!(sk.air && sk.air.fromTrans) && sk.v.y > 1.2 * Math.hypot(sk.v.x, sk.v.z); }
@@ -368,7 +367,7 @@ function updateCamera(dt, P, travel, opts) {
   // 地面上镜头朝向紧跟板子：转弯时板子在屏幕上基本不歪、不跑，手指不会从板子上溜出去
   // Kickturn 时镜头慢慢跟：板子在屏幕上跟着手指转（手指不会滑出板子），松手后镜头再转过来
   const kicking = !opts && sk.mode === 'ground' && sk.kickT > 0 && sk.kickAcc > 0.05;
-  const rate = !opts && sk.mode === 'air' ? 2.2 : grind ? 6 : opts ? 7 : kicking ? 1.2 : sk.mode === 'ground' && sk.s < 1 ? 4 + sk.s * 7 : 11;
+  const rate = !opts && sk.mode === 'air' ? 2.2 : grind ? 6 : opts ? 7 : kicking ? 0 : sk.mode === 'ground' && sk.s < 1 ? 4 + sk.s * 7 : 11;
   camYaw += angDiff(want, camYaw) * damp(rate, dt);
   const fx_ = Math.sin(camYaw), fz = Math.cos(camYaw);
   const tgt = tmpV.copy(P); tgt.y += 0.08;
@@ -382,6 +381,8 @@ function updateCamera(dt, P, travel, opts) {
   // 镜头始终在板子正后方（朝向本身已经平滑过）：滑得再快也不会落在后面，转弯时板子也不会在屏幕上横着跑
   if (!camInit) { camPos.set(cx, cy, cz); camInit = true; }
   if (!opts && sk.mode === 'bail') { camPos.x += (cx - camPos.x) * damp(10, dt); camPos.z += (cz - camPos.z) * damp(10, dt); } // 摔倒时板子乱滚，镜头稍微平滑一点不跟着抖
+  else if (kicking) camBlend = 1; // Kickturn：镜头不动，板子在屏幕上绕着按住的那头转，手指一直在板子上；松手后镜头再慢慢转过来
+  else if (camBlend > 0) { camBlend = Math.max(0, camBlend - dt * 1.6); const k = damp(7, dt); camPos.x += (cx - camPos.x) * k; camPos.z += (cz - camPos.z) * k; if (!camBlend) { camPos.x = cx; camPos.z = cz; } }
   else { camPos.x = cx; camPos.z = cz; }
   camPos.y += (cy - camPos.y) * damp(flatAir ? 16 : 7, dt);
   cam.position.copy(camPos);
@@ -390,7 +391,7 @@ function updateCamera(dt, P, travel, opts) {
     if (feel.shake) { const t = performance.now() / 1000; cam.position.x += Math.sin(t * 83) * feel.shake; cam.position.y += Math.sin(t * 97 + 1) * feel.shake; cam.position.z += Math.sin(t * 71 + 2) * feel.shake; }
   }
   if (vertAir) look.set(tgt.x + fx_ * 0.25, tgt.y + 0.08, tgt.z + fz * 0.25);
-  else { const la = portrait ? 0.62 : 0.4; look.set(tgt.x + fx_ * la, tgt.y - 0.02, tgt.z + fz * la); } // 横屏少看远一点，板子不会贴着屏幕底边
+  else { const la = portrait ? 0.67 : 0.4; look.set(tgt.x + fx_ * la, tgt.y - 0.02, tgt.z + fz * la); } // 横屏少看远一点，板子不会贴着屏幕底边
   cam.lookAt(look);
   // 压板转弯时镜头跟着往弯里稍微歪一点（很小，板子自己的倾斜仍然看得清）
   if (!opts && sk.mode !== 'bail') cam.rotateZ(-0.22 * sk.roll);
@@ -426,7 +427,7 @@ function startGame(m) {
   combo.clear(); combo.total = 0; setCombo(null); clearLog(); lastTrick = null; rec.clear(); fx.clear();
   sk.reset(T.spawn.x, T.spawn.z, T.spawn.yaw); sk.safe = { ...T.spawn }; renderQ.copy(sk.qv);
   camInit = false; feelReset(); kickTip.on = false; kickTip.t = 0;
-  timeLeft = mode === 'timed' ? 60 : 0; show('timer', mode === 'timed');
+  timeLeft = mode === 'timed' ? 100 : 0; show('timer', mode === 'timed'); // 限时赛 100 秒（和 Touchgrind Skate 2 一样，用户定的）
   hideAll(); show('hud', true); show('rp', false); show('rpTag', false);
   state = 'play'; input.enabled = true; input.clear();
   online.connect(myRoom, mapId); online.setPlaying(true);
@@ -636,7 +637,8 @@ function frame(now) {
       renderQ.slerp(sk.qv, damp(sk.mode === 'bail' ? 60 : sk.mode === 'grind' ? 22 : 32, dt));
       feelStep(dt);
       const vr = visRoll();
-      poseBoard(board, sk.p, renderQ, pitch, pitch >= 0 ? -DECK.truckZ : DECK.truckZ, sk.flipA, sk.shoveA, sk.wheelRot, vr, vr * 0.45, feel.comp);
+      const gl = sk.groundLift(); if (gl) { tmpP.copy(sk.p); tmpP.y += gl; }
+      poseBoard(board, gl ? tmpP : sk.p, renderQ, pitch, pitch >= 0 ? -DECK.truckZ : DECK.truckZ, sk.flipA, sk.shoveA, sk.wheelRot, vr, vr * 0.45, feel.comp);
       if (state === 'play') rec.push(dt, sk, renderQ, pitch, sk.wheelRot, vr, feel.comp);
     }
     // 相机
@@ -673,7 +675,7 @@ function frame(now) {
       if (a === 'me') return state === 'menu' || state === 'garage' ? null : [bp[0], bp[1] - 40];
       const r = online.remotes.get(a); return r && r.screen ? r.screen : null; } });
     online.update(dt, now, { cam, project, showTags: state === 'play' || state === 'pause' || state === 'replay', q: renderQ, pitch, roll: state === 'play' ? visRoll() : 0 });
-    const surf = sk.feat && WOOD.has(sk.feat) ? 'wood' : 'conc';
+    const surf = sk.mode === 'grind' && sk.grind && sk.grind.r ? (sk.grind.r.kind === 'ledge' ? 'ledge' : 'metal') : sk.feat && WOOD.has(sk.feat) ? 'wood' : 'conc';
     Aud.update(state === 'play' ? sk.speed() : 0, state === 'play' ? sk.mode : 'none', surf, sk.grind && sk.grind.type, state === 'play' ? Math.abs(sk.yawRate * sk.s) : 0, state === 'play' ? Math.abs(sk.slip) : 0);
     if (state === 'play') joints(); 
     hudT += dt;
