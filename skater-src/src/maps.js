@@ -83,7 +83,7 @@ function buildSpot() {
   F.stairs = T.add({ t: 'stairs', x: -8.5, z: -8.5, yaw: 0, w: 4, n: 3, rise: 0.16, run: 0.36 });
   handrail(T, -10.85, -9.75, 0.9, -8.55, -7.78, 0.42, -7.0);
   F.bank = T.add({ t: 'ramp', x: -2.5, z: -10.25, yaw: -PI / 2, w: 3.5, l: 2.5, h: 0.48 });
-  T.marks = { stairs: { x0: -10.5, x1: -6.5, zMin: -7.7, top: 0.4 }, bigQP: 1.2 };
+  T.marks = { stairs: { x0: -10.5, x1: -6.5, zMin: -7.7, top: 0.4 }, bigQP: 1.2, longLedge: F.ledge, pad: F.pad }; // 挑战用：长台（10 米）、Manual 台
   T.decals = [
     ['crack', -8, 3, 2.2, 0.4], ['crack', 9.5, 8, 2, 2.2], ['crack', 2.5, 5.5, 1.8, 1.1], ['stain', -2, -8, 2, 0], ['stain', 3, 2, 2.2, 1], ['stain', -9, 6, 1.8, 2],
     ['manhole', 6.8, -10, 0.9, 0], ['drain', -11.4, 7, 1.2, 1.57],

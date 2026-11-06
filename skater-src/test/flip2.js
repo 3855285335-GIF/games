@@ -66,27 +66,30 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
       place(2.6, -9.6, 0, 4);
       return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (tc != null && t >= tc) { i.fingers = 1; i.touching = 1; i.capT = capT == null ? 2.0 : capT; } });
     };
-    out.good = kick(0.2, 0.75);    // 力度 0.2 ≈ 正好一圈：转完以后什么时候接都行
-    out.good2 = kick(0.38, 0.38);  // 力度 0.38 = 转 1.25 圈：在转到一圈的那一下接住（拨完 0.27～0.39 秒）
-    out.early = kick(0.2, 0.15);   // 才转了一点就接
-    out.late = kick(0.38, 0.95);   // 拨重了转过头还不接
-    out.light = kick(0.02, 0.9);   // 拨太轻：转不到一圈
-    out.never = kick(0.2, null);
-    out.oldFinger = kick(0.2, 0.75, 0.5); // 一直按着没离开过板的手指，不算接住
-    out.double = kick(0.9, 0.9);   // 力度 0.9 ≈ 两圈
+    // 转多少（带矫正）≈ 力度 0 → 0.96 圈，0.08 → 1.01，0.3 → 1.32，0.7 → 2.01；转的过程：0.3 秒转完 63%
+    out.good = kick(0.08, 0.85);   // 力度 0.08 ≈ 正好一圈：转完以后什么时候接都行
+    out.good2 = kick(0.3, 0.5);    // 力度 0.3 = 转 1.32 圈：在转到一圈的那一下接住（拨完 0.35～0.53 秒）
+    out.early = kick(0.08, 0.15);  // 才转了一点就接
+    out.late = kick(0.3, 1.0);     // 拨重了转过头还不接
+    out.light = kick(0, 1.0);      // 最轻的一拨（矫正后也接近一圈）：晚点接也能落
+    out.never = kick(0.08, null);
+    out.oldFinger = kick(0.08, 0.85, 0.5); // 一直按着没离开过板的手指，不算接住
+    out.double = kick(0.7, 1.0);   // 力度 0.7 ≈ 两圈
     // 4 Shove-it：力度不同转速不同；接在 90° 会摔
     const shove = (k, tc) => { place(2.6, -9.6, 0, 4); return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('back', -1, k, 1.0); if (t >= tc) { i.fingers = 1; i.capT = 2.0; } }); };
-    out.shoveGood = shove(0.2, 0.8);
-    out.shoveHalf = shove(0.2, 0.2);
+    out.shoveGood = shove(0.08, 0.85);
+    out.shoveHalf = shove(0.08, 0.2);
     // 4c 力度一点点不同，转的角度就不同（不接板，看最后停在多少度）
     const rest = (k) => { place(2.6, -9.6, 0, 4); let a = 0; run(0.9, (t) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); a = sk.flipA; }); return Math.abs(a); };
     out.rest = [0.1, 0.12, 0.14, 0.16, 0.18].map(rest);
     // 5 低跳 + 马上猛翻：翻的时候板边不能穿进地里
     place(2.6, -9.6, 0, 4); out.lowFlip = run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', 0); if (at(t, 0.01)) sk.flick('front', 1, 1, 1.0); if (t > 0.3) { i.fingers = 1; i.capT = 2; } });
     // 6 键盘 / 简单模式：自动接板
-    place(2.6, -9.6, 0, 4); out.auto = run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.6); if (at(t, 0.04)) { sk.flick('front', -1, 0.45, 1.0); sk.flick('back', -1, 0.45, 1.0); } i.auto = true; });
+    place(2.6, -9.6, 0, 4); out.auto = run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.6); if (at(t, 0.04)) { sk.flick('front', -1, 0.2, 1.0); sk.flick('back', -1, 0.2, 1.0); } i.auto = true; });
     // 7 慢速顶到长边沿侧面（边沿 x -4.475～-3.925，z -5.6～4.4，高 0.42）：板头不能伸进去
     place(-2.2, 0, -Math.PI / 2, 2); out.noseWall = run(2.5, null);
+    // 7b 慢速顶到 Manual 台（16 厘米高，比板头 13 厘米高）的侧面：板头要顶在侧面上，不能伸进台子里
+    place(0.4, -5.6, 0, 1.6); out.padNose = run(2.5, null);
     // 8 快速撞边沿摔倒：摔出去的板子不能穿进边沿 / 地面
     place(-2.2, 0.2, -Math.PI / 2, 6); out.bailWall = run(2.5, null);
     // 9 贴着边沿原地转（Kickturn）：板头不能转进边沿里
@@ -136,7 +139,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(R.good2.names.includes('Kickflip') && !R.good2.bails.length, `3a2 拨重了一点，在转到一圈时接住 → Kickflip（${R.good2.names} ${R.good2.bails}）`);
   ok(R.early.bails[0] === 'flipShort', `3b 接太早 → 没翻够（${R.early.bails}）`);
   ok(R.late.bails[0] === 'flipOver', `3c 拨重了又不早点接 → 翻过头（${R.late.bails}）`);
-  ok(R.light.bails[0] === 'flipShort', `3c2 拨太轻 → 转不到一圈（${R.light.bails}）`);
+  ok(R.light.names.includes('Kickflip') && !R.light.bails.length, `3c2 最轻的一拨也接近一圈（矫正），晚点接能落 → Kickflip（${R.light.names} ${R.light.bails}）`);
   ok(R.never.bails[0] === 'catch', `3d 不接 → 没接住（${R.never.bails}）`);
   ok(R.oldFinger.bails[0] === 'catch', `3e 一直按着、没离开过板的手指不算接住（${R.oldFinger.bails}）`);
   ok(R.double.names.some((n) => /Double Kickflip/.test(n)) && !R.double.bails.length, `3f 猛拨 + 转两圈时接 → Double Kickflip（${R.double.names} ${R.double.bails}）`);
@@ -146,6 +149,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(R.lowFlip.mx.air <= 0.03, `5 低跳马上猛翻：空中板子最深穿进地面 ${R.lowFlip.mx.air} 米（${R.lowFlip.names} ${R.lowFlip.bails}）`);
   ok(R.auto.names.some((n) => /Varial Kickflip/.test(n)), `6 自动接板（键盘 / 简单模式）：${R.auto.names} ${R.auto.bails}`);
   ok(R.noseWall.mx.ground <= 0.02 && !R.noseWall.bails.length, `7 慢速顶到台子侧面：板头最深伸进去 ${R.noseWall.mx.ground} 米，没摔`);
+  ok(R.padNose.mx.ground <= 0.02, `7b 慢速顶到 Manual 台侧面：板头最深伸进去 ${R.padNose.mx.ground} 米`);
   ok(R.bailWall.bails[0] === 'wall' && R.bailWall.mx.bail <= 0.03 && R.bailWall.mx.ground <= 0.02, `8 快速撞台子摔倒：摔出去的板子最深 ${R.bailWall.mx.bail} 米，地面 ${R.bailWall.mx.ground} 米`);
   ok(R.kickWall.mx.ground <= 0.02, `9 贴着台子原地转：最深 ${R.kickWall.mx.ground} 米`);
   ok(R.edge.mx.ground < 0.02 && R.edge.mx.bail < 0.03, `10 撞世界边上的墙：板子伸到墙外最多 地面 ${R.edge.mx.ground}、摔倒 ${R.edge.mx.bail} 米`);

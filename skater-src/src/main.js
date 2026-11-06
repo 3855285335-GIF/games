@@ -149,7 +149,8 @@ function setCfg(k, i) {
 let myName = store.get('name', ''), myRoom = store.get('room', '大厅');
 const myId = rnd(10); // 10 位小写字母数字（国内联机的数据库要求 8～24 位）
 const renderQ = new Quaternion(), tmpQ = new Quaternion(), UP = new Vector3(0, 1, 0);
-let mode = 'free', state = 'menu', timeLeft = 0, trickSeq = 0, lastTrick = null;
+let mode = 'free', state = 'menu', timeLeft = 0, trickSeq = 0, lastTrick = null, runEnd = 0;
+const grindRun = { r: null, d: 0 }, padRun = { d: 0 }; // 挑战用：这一次磨了多远、在 Manual 台上翘了多远
 
 const combo = new Combo({
   onChange: (c) => setCombo(c),
@@ -166,7 +167,12 @@ const combo = new Combo({
 const sk = new Skater(T, {
   onPop: () => { Aud.pop(); feelHit(0.28, 0.1, 0); },
   onFlick: () => Aud.flick(),
-  onCatch: () => Aud.catch(),
+  onCatch: () => {
+    Aud.catch();
+    const c = sk.air && sk.air.catchInfo; if (!c) return;
+    const w = c.which === 'shove' ? '转板' : '翻板';
+    rec.mark(c.kind === 'ok' ? w + '接得正好（差 ' + c.deg + '°，脚把板踩正了）' : w + (c.kind === 'early' ? '接早了 ' : '接晚了 ') + c.deg + '°', c.kind === 'ok' ? '#7dff9b' : '#ffb36b');
+  },
   onLand: (info) => {
     Aud.land(info.impact, info.quality); fx.land(sk.p, info.impact);
     feelHit(0.2 + 0.075 * info.impact, -(0.22 + 0.085 * info.impact), Math.max(0, info.impact - 4.5) * 0.004 + (info.quality === 'sketchy' ? 0.004 : 0));
@@ -187,6 +193,7 @@ const sk = new Skater(T, {
     toast(msg, '#ff6b5f', 1500);
     combo.lose();
     sk8.attempt(null, true);
+    if (mode === 'run' && state === 'play' && !runEnd) runEnd = setTimeout(() => { runEnd = 0; if (mode === 'run' && state === 'play') endGame('run'); }, 1300); // 让玩家看清自己怎么摔的再结算
   },
   onGrind: (on, g) => {
     if (on) { if (g.locked) store.set('lockN', store.get('lockN', 0) + 1); Aud.grindOn(); feelHit(0.22, -0.12, 0.003); combo.startLive(g.name, GRIND_RATE[g.name] || 150, 'grind'); fx.trick(g.name, '#ffd23f'); if (g.type === 'slide') completeChal('slide'); }
@@ -210,11 +217,25 @@ const sk = new Skater(T, {
   onRespawn: () => {},
 });
 sk.reset(T.spawn.x, T.spawn.z, T.spawn.yaw);
+// 挑战：一口气滑完整根长台（同一根台边上一次磨了多远）、Manual 台从头翘到尾（在台面上一次 Manual 走了多远）
+function trackRuns(dt) {
+  if (sk.mode === 'grind' && sk.grind) {
+    const r = sk.grind.r; if (grindRun.r !== r) { grindRun.r = r; grindRun.d = 0; }
+    grindRun.d += Math.abs(sk.grind.sp) * dt;
+    if (T.marks.longLedge && r.box === T.marks.longLedge && grindRun.d >= 9.3) completeChal('ledgeFull');
+  } else grindRun.r = null;
+  if (sk.manual && sk.mode === 'ground' && T.marks.pad && sk.feat === T.marks.pad) { padRun.d += sk.s * dt; if (padRun.d >= 3.4) completeChal('manualPad'); } // 台长 4.2 米：跳上去会落在台头往里一点，翘过 3.4 米就算从头到尾
+  else if (!sk.manual || sk.mode !== 'ground') padRun.d = 0;
+}
 function checkLandChal(info, tr) {
   const n = tr ? tr.name : '', M = T.marks;
   if (info.air.popped) completeChal('ollie');
   if (info.air.popped && info.height >= 0.7) completeChal('high');
-  if (/(^|\s)Kickflip/.test(n) && !/Varial|Double|Triple/.test(n)) completeChal('kick');
+  if (info.air.popped && info.height >= 1.0) completeChal('high1');
+  if (/^(Fakie )?Ollie$/.test(n) && info.height < 0.6 && info.quality !== 'sketchy') completeChal('ollieLow');
+  if (/(^|\s)Kickflip/.test(n) && !/Varial|Double|Triple/.test(n)) { completeChal('kick'); if (info.quality === 'clean') completeChal('kickClean'); }
+  if (/Double Kickflip/.test(n)) completeChal('double');
+  if (/(^|\s)360 Shove-it/.test(n)) completeChal('shove360');
   if (/(^|\s)Heelflip/.test(n) && !/Varial|Inward|Double|Triple/.test(n)) completeChal('heel');
   if (/Pop Shove-it/.test(n)) completeChal('shove');
   if (/Varial Kickflip/.test(n)) completeChal('varial');
@@ -236,6 +257,7 @@ const practice = new Practice({
     combo.clear(); sk.reset(R.ax - (dx / L) * 7, R.az - (dz / L) * 7, Math.atan2(dx, dz)); sk.s = 4.2; camInit = false;
   },
   good: () => { Aud.done(); },
+  tip: (t) => toast(t, '#ffd23f', 1600), // 这一步没做对：告诉玩家该轻一点还是重一点
   finish: () => { completeChal('practice'); store.set('pracDone', true); },
 });
 const rec = new Recorder();
@@ -296,7 +318,9 @@ function bindSk8() {
   const c = $('sk8Close'); if (c) c.onclick = () => { sk8.state = null; sk8.ui(); };
   const s = $('sk8Stop'); if (s) s.onclick = () => sk8.cancel();
 }
-$('invYes').onclick = () => sk8.join(); $('invNo').onclick = () => sk8.decline();
+// 连续模式里要对战：先换成自由滑（对战里会摔很多次，不能摔一次就结算）
+function leaveRun() { if (mode !== 'run') return; mode = 'free'; clearTimeout(runEnd); runEnd = 0; toast('已换成自由滑来对战', '#fff', 1400); }
+$('invYes').onclick = () => { leaveRun(); sk8.join(); }; $('invNo').onclick = () => sk8.decline();
 $('lobbyGo').onclick = () => sk8.start(); $('lobbyNo').onclick = () => sk8.cancel();
 
 /* ---------------- 手感反馈（只影响画面）：落地时板面下沉回弹、镜头跟着沉一下 / 轻震 ---------------- */
@@ -449,11 +473,12 @@ function startGame(m) {
   sk.reset(T.spawn.x, T.spawn.z, T.spawn.yaw); sk.safe = { ...T.spawn }; renderQ.copy(sk.qv);
   camInit = false; feelReset(); kickTip.on = false; kickTip.t = 0;
   timeLeft = mode === 'timed' ? 100 : 0; show('timer', mode === 'timed'); // 限时赛 100 秒（和 Touchgrind Skate 2 一样，用户定的）
+  clearTimeout(runEnd); runEnd = 0; grindRun.r = null; padRun.d = 0;
   hideAll(); show('hud', true); show('rp', false); show('rpTag', false);
   state = 'play'; input.enabled = true; input.clear();
   online.connect(myRoom, mapId); online.setPlaying(true);
   if (mode === 'practice') practice.start(); else practice.stop();
-  setHint(mode === 'free' && !store.get('pracDone', false) && !chalDone.size ? '第一次玩？回主菜单点「练习」，一步步教你' : '');
+  setHint(mode === 'run' ? '连续模式：不限时，摔一次就结算，比谁一口气拿的分多' : mode === 'free' && !store.get('pracDone', false) && !chalDone.size ? '第一次玩？回主菜单点「练习」，一步步教你' : '');
   if (mode !== 'practice') setTimeout(() => setHint(''), 6000);
   qTipReset(4);
 }
@@ -512,29 +537,41 @@ function openGarage() {
   [...$('gTabs').children].forEach((s) => (s.onclick = () => { tab = s.dataset.k; draw(); Aud.click(); }));
   draw();
 }
-let lbMap = 'yard';
-async function openBoard(back) {
+// 排行榜：限时赛和连续模式分开排（连续模式的成绩存在「地图编号_run」下面，用的还是同一张表，不用改数据库）
+const boardKey = (kind) => (kind === 'run' ? mapId + '_run' : mapId);
+let lbKind = 'timed';
+async function openBoard(back, kind) {
   openPanel('lb'); if (back) panelBack = back;
-  lbMap = mapId;
+  lbKind = kind || lbKind;
   const load = async () => {
-    buildMapChips($('lbMaps'), lbMap, (id) => { lbMap = id; load(); });
+    const box = $('lbMaps'); box.style.display = ''; box.innerHTML = '';
+    for (const [k, name, desc] of [['timed', '限时 100 秒', '100 秒里拿多少分'], ['run', '连续', '摔一次就结束']]) {
+      const d = document.createElement('div'); d.className = 'chip' + (k === lbKind ? ' on' : ''); d.innerHTML = name + '<small>' + desc + '</small>';
+      d.onclick = () => { if (lbKind === k) return; lbKind = k; Aud.click(); load(); };
+      box.appendChild(d);
+    }
     renderBoard(null);
     if (!online.enabled) { renderBoard({ error: 'off' }); return; }
-    const res = await topScores(SUPABASE_URL, SUPABASE_KEY, lbMap);
-    if (!$('lb').classList.contains('hide')) renderBoard(res, myName);
+    const want = lbKind, res = await topScores(SUPABASE_URL, SUPABASE_KEY, boardKey(want));
+    if (!$('lb').classList.contains('hide') && want === lbKind) renderBoard(res, myName);
   };
   load();
 }
-function endTimed() {
-  if (combo.active && sk.mode !== 'bail') combo.bank();
+// 一局结束：限时赛时间到 / 连续模式摔了
+function endGame(kind) {
+  if (kind === 'timed' && combo.active && sk.mode !== 'bail') combo.bank();
+  clearTimeout(runEnd); runEnd = 0;
   state = 'result'; input.enabled = false; input.clear(); setHint('');
-  const sc = combo.total, key = 'best_' + mapId, best = Math.max(store.get(key, 0), sc); store.set(key, best);
+  const sc = combo.total, key = kind === 'run' ? 'best_' + mapId + '_run' : 'best_' + mapId, best = Math.max(store.get(key, 0), sc); store.set(key, best);
+  $('rTitle').textContent = kind === 'run' ? '摔了！这一口气拿到' : '时间到！';
   $('rScore').textContent = fmt(sc); $('rBest').textContent = sc >= best && sc > 0 ? '新纪录！' : '本机最高分 ' + fmt(best);
   $('rRank').textContent = '';
-  if (sc >= 15000) completeChal('timed');
+  if (kind === 'timed' && sc >= 15000) completeChal('timed');
+  if (kind === 'run' && sc >= 5000) completeChal('run');
+  lbKind = kind;
   if (online.enabled && sc > 0) {
     $('rRank').textContent = '正在上传成绩…';
-    submitScore(SUPABASE_URL, SUPABASE_KEY, myName, sc, mapId).then((r) => {
+    submitScore(SUPABASE_URL, SUPABASE_KEY, myName, sc, boardKey(kind)).then((r) => {
       if (r.missing) $('rRank').textContent = '排行榜还没开通（需要运行一次 SQL）';
       else if (r.data && r.data.ok) {
         const d = r.data;
@@ -550,12 +587,16 @@ function endTimed() {
 }
 function startReplay() {
   if (rec.buf.length < 30) { toast('还没有可以回放的内容', '#fff', 1200); return; }
-  player = new Player(rec.buf); state = 'replay';
+  player = new Player(rec.buf, rec.ev); state = 'replay';
   hideAll(); show('rp', true); show('rpTag', true); show('hud', false);
-  $('rpPlay').textContent = '暂停'; $('rpSpd').textContent = '1×'; $('rpCam').textContent = '跟随';
-  player.t = Math.max(0, player.dur - 6); camInit = false;
+  $('rpPlay').textContent = '暂停'; $('rpCam').textContent = '跟随';
+  // 最近接过板：从接板前 1.5 秒开始、半速放，看清自己接早了还是接晚了；没有就放最后 6 秒
+  const last = player.ev.length ? player.ev[player.ev.length - 1] : null;
+  if (last && last.t > player.dur - 12) { player.t = Math.max(0, last.t - 1.5); player.speed = 0.5; }
+  else player.t = Math.max(0, player.dur - 6);
+  $('rpSpd').textContent = player.speed + '×'; camInit = false;
 }
-function exitReplay() { player = null; show('rp', false); show('rpTag', false); show('hud', true); state = 'pause'; show('pause', true); camInit = false; }
+function exitReplay() { player = null; show('rp', false); show('rpTag', false); show('rpInfo', false); show('hud', true); state = 'pause'; show('pause', true); camInit = false; }
 $('rpPlay').onclick = () => { if (!player) return; if (!player.playing && player.t >= player.dur) player.t = 0; player.playing = !player.playing; $('rpPlay').textContent = player.playing ? '暂停' : '播放'; };
 $('rpSpd').onclick = () => { if (!player) return; player.speed = player.speed === 1 ? 0.5 : player.speed === 0.5 ? 0.25 : 1; $('rpSpd').textContent = player.speed + '×'; };
 $('rpCam').onclick = () => { if (!player) return; player.cam = (player.cam + 1) % 3; $('rpCam').textContent = ['跟随', '环绕', '侧面'][player.cam]; };
@@ -568,6 +609,7 @@ $('inName').addEventListener('change', () => readInputs());
 buildMapChips($('maps'), mapId, (id) => loadMap(id));
 $('mFree').onclick = () => startGame('free');
 $('mTimed').onclick = () => startGame('timed');
+$('mRun').onclick = () => startGame('run');
 $('mPrac').onclick = () => startGame('practice');
 $('mChal').onclick = () => { refreshChal(); openPanel('chal'); };
 $('mLb').onclick = () => openBoard();
@@ -586,10 +628,10 @@ $('bEmo').onclick = () => { $('emobar').classList.toggle('hide'); };
 $('pResume').onclick = () => pause(false);
 $('pSpawn').onclick = () => { combo.lose(); sk.reset(T.spawn.x, T.spawn.z, T.spawn.yaw); camInit = false; pause(false); };
 $('pReplay').onclick = () => startReplay();
-$('pSk8').onclick = () => { pause(false); sk8.host(); };
+$('pSk8').onclick = () => { pause(false); leaveRun(); sk8.host(); };
 $('pRestart').onclick = () => startGame(mode);
 $('pMenu').onclick = () => toMenu();
-$('rAgain').onclick = () => startGame('timed');
+$('rAgain').onclick = () => startGame(mode === 'run' ? 'run' : 'timed');
 $('rLb').onclick = () => openBoard('result');
 $('rMenu').onclick = () => toMenu();
 $('pracSkip').onclick = () => { if (practice.on) practice.next(); };
@@ -635,7 +677,8 @@ function frame(now) {
       if (n >= 24) acc = 0;
       if (sk.mode === 'ground' && sk.s * 3.6 >= 20) completeChal('speed');
       if (sk.mode === 'grind' && sk.grind && sk.grind.r.handSlope) completeChal('hand');
-      if (mode === 'timed') { timeLeft -= dt; $('timer').textContent = Math.max(0, Math.ceil(timeLeft)); if (timeLeft <= 0) endTimed(); }
+      trackRuns(dt);
+      if (mode === 'timed') { timeLeft -= dt; $('timer').textContent = Math.max(0, Math.ceil(timeLeft)); if (timeLeft <= 0) endGame('timed'); }
       practice.update(dt, sk, I, geo);
       kickTipFrame(dt, I);
       sk8.tick();
@@ -649,6 +692,7 @@ function frame(now) {
     if (state === 'menu' || state === 'garage') P = previewPose(dt);
     else if (state === 'replay' && player) {
       player.step(dt); player.sample(rpOut);
+      { const nt = player.note(), el = $('rpInfo'); if (nt) { if (el.textContent !== nt.text) el.textContent = nt.text; el.style.color = nt.col; } show('rpInfo', !!nt); }
       renderQ.copy(rpOut.q); P = rpOut.p; pitch = rpOut.a;
       poseBoard(board, P, renderQ, pitch, pitch >= 0 ? -DECK.truckZ : DECK.truckZ, rpOut.f, rpOut.h, rpOut.w, rpOut.r, rpOut.r * 0.45, rpOut.c);
       travel = Math.hypot(rpOut.dx, rpOut.dz) > 0.05 ? Math.atan2(rpOut.dx, rpOut.dz) : camYaw;
@@ -725,4 +769,4 @@ requestAnimationFrame(frame);
 let glReady = false;
 requestAnimationFrame(() => setTimeout(() => { try { renderer.compile(scene, cam); } catch (e) { console.error(e); } glReady = true; }, 0));
 Aud.prep(1200); // 菜单出来以后趁空闲把音效算好，点开始时不用再等
-window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, Aud, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip };
+window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, Aud, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip, trackRuns, grindRun, padRun, endGame, get mode() { return mode; }, startReplay, get player() { return player; } };

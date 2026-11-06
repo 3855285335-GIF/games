@@ -21,9 +21,13 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   await p.evaluate(()=>{__dbg.sk.s=0;});await p.keyboard.down('KeyZ');await sleep(800);await p.keyboard.up('KeyZ');await sleep(400);console.log('after kick',JSON.stringify(await pr()));
   // 4 Ollie / 5 翻板 / 6 转板（键盘，自动接板）
   const resetRun=async()=>{await p.evaluate(()=>{const sk=__dbg.sk;sk.reset(2.6, -9.6, 0);sk.s=4;});await sleep(150);};
-  await resetRun();await p.keyboard.press('Space');await sleep(1300);console.log('after ollie',JSON.stringify(await pr()));
-  await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.press('KeyJ');await sleep(1300);console.log('after flip',JSON.stringify(await pr()));
-  await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.press('KeyK');await sleep(1300);console.log('after shove',JSON.stringify(await pr()));
+  // 第 4 步的练习按力度：V 轻跳（小跳）、空格（大跳）、J 轻拨翻板、K 轻侧拨、Shift+K 用力侧拨；"拨重了早点接"键盘做不了，点「跳过这步」
+  await resetRun();await p.keyboard.press('KeyV');await sleep(1300);console.log('after ollie small',JSON.stringify(await pr()));
+  await resetRun();await p.keyboard.press('Space');await sleep(1500);console.log('after ollie big',JSON.stringify(await pr()));
+  await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.press('KeyJ');await sleep(1500);console.log('after flip',JSON.stringify(await pr()));
+  await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.press('KeyK');await sleep(1500);console.log('after shove',JSON.stringify(await pr()));
+  await resetRun();await p.keyboard.press('Space');await sleep(60);await p.keyboard.down('Shift');await p.keyboard.press('KeyK');await p.keyboard.up('Shift');await sleep(1500);console.log('after shove 360',JSON.stringify(await pr()));
+  await p.tap('#pracSkip');await sleep(200);console.log('after skip',JSON.stringify(await pr()));
   // 7 Manual
   await resetRun();await p.keyboard.down('KeyM');await sleep(2000);await p.keyboard.up('KeyM');await sleep(200);console.log('after manual',JSON.stringify(await pr()));
   // 8 磨杆：已被传送到杆子前，算好时间起跳

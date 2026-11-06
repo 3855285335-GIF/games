@@ -150,11 +150,11 @@ export class Input {
     this.keys[k] = down;
     if (!down) return;
     this.kbT = this.now();
-    const ev = { Space: { type: 'pop', kind: 'tail', k: 0.6 }, KeyN: { type: 'pop', kind: 'nose', k: 0.6 },
+    const ev = { Space: { type: 'pop', kind: 'tail', k: 0.6 }, KeyV: { type: 'pop', kind: 'tail', k: 0.05 }, KeyN: { type: 'pop', kind: 'nose', k: 0.6 },
       KeyJ: { type: 'flick', which: 'front', dir: -1 }, KeyL: { type: 'flick', which: 'front', dir: 1 },
       KeyK: { type: 'flick', which: 'back', dir: -1 }, KeyI: { type: 'flick', which: 'back', dir: 1 },
       KeyX: { type: 'powerslide', dir: 1 }, KeyR: { type: 'reset' } }[k];
-    if (ev) this.events.push(Object.assign({}, ev));
+    if (ev) { const o = Object.assign({}, ev); if (o.type === 'flick' && e.shiftKey) o.k = 0.7; this.events.push(o); } // 按住 Shift = 用力拨（转两圈 / 一整圈）
   }
   // 每帧调用一次
   update(dt, onGround) {

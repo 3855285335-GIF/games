@@ -51,7 +51,9 @@ export function setHint(t) { const h = $('hint'); h.textContent = t || ''; h.sty
 
 /* ---------- 挑战 ---------- */
 export const chalDone = new Set(store.get('chal', []));
-export function chalCount() { return chalDone.size + '/' + CHALLENGES.length; }
+// 只算现在还在列表里的挑战（以前版本的挑战改过名字，旧记录不算进去，也不会多算）
+const doneN = () => CHALLENGES.reduce((n, c) => n + (chalDone.has(c.id) ? 1 : 0), 0);
+export function chalCount() { return doneN() + '/' + CHALLENGES.length; }
 const chalQ = [];
 function nextChalToast() {
   if (!chalQ.length) return;
@@ -73,8 +75,8 @@ export function refreshChal() {
   $('chCount').textContent = chalCount(); $('chCount2').textContent = chalCount();
   $('chList').innerHTML = CHALLENGES.map((c) => `<div class="ch ${chalDone.has(c.id) ? 'ok' : ''}"><div class="ck">${chalDone.has(c.id) ? '✓' : ''}</div><span>${esc(c.t)}</span></div>`).join('');
 }
-export const isUnlocked = (k, i) => chalDone.size >= (UNLOCK[k][i] || 0);
-function unlockedCount() { let n = 0; for (const k in UNLOCK) UNLOCK[k].forEach((v) => { if (chalDone.size >= v) n++; }); return n; }
+export const isUnlocked = (k, i) => doneN() >= (UNLOCK[k][i] || 0);
+function unlockedCount() { const d = doneN(); let n = 0; for (const k in UNLOCK) UNLOCK[k].forEach((v) => { if (d >= v) n++; }); return n; }
 
 /* ---------- 设置面板 ---------- */
 export function bindSettings(apply) {
@@ -123,11 +125,11 @@ export function buildGarage(cfg, tab, onPick) {
     else if (tab === 'wheel') d.innerHTML = `<div class="sw2" style="background:${it}"></div>`;
     else d.innerHTML = `<div class="sw2" style="background:#${it.c.toString(16).padStart(6, '0')}"></div>`;
     const need = UNLOCK[tab][i] || 0;
-    if (chalDone.size < need) { const l = document.createElement('div'); l.className = 'lock'; l.innerHTML = `<b>🔒</b>完成 ${need} 个挑战`; d.appendChild(l); }
-    d.onclick = () => { if (chalDone.size < need) { toast('完成 ' + need + ' 个挑战解锁（现在 ' + chalDone.size + ' 个）', '#fff', 1300); return; } onPick(tab, i); Aud.click(); };
+    if (doneN() < need) { const l = document.createElement('div'); l.className = 'lock'; l.innerHTML = `<b>🔒</b>完成 ${need} 个挑战`; d.appendChild(l); }
+    d.onclick = () => { if (doneN() < need) { toast('完成 ' + need + ' 个挑战解锁（现在 ' + doneN() + ' 个）', '#fff', 1300); return; } onPick(tab, i); Aud.click(); };
     grid.appendChild(d);
   });
-  $('gNote').textContent = '已完成 ' + chalDone.size + ' 个挑战 · 完成更多挑战解锁更多改装';
+  $('gNote').textContent = '已完成 ' + doneN() + ' 个挑战 · 完成更多挑战解锁更多改装';
 }
 
 /* ---------- 排行榜 ---------- */

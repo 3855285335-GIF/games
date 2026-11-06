@@ -11,13 +11,17 @@ const STEP_TOL = 0.035;          // 能直接滚上去的小坎
 // 力度决定结果：划得越快跳得越高；拨得越重，板子转得越多、也转得越快，然后自己慢慢停下（不会一直转很多圈）
 const POP_MIN = 2.4, POP_RNG = 1.2;            // 起跳速度 2.4～3.6 m/s（空中重力 5.5：高度约 0.5～1.2 米，滞空约 0.9～1.3 秒）
 const popV = (k) => POP_MIN + POP_RNG * clamp(k || 0, 0, 1);
-// 2026-11-06 用户说转的幅度少了：手机上随手一拨的力度大多在 0.1～0.45，以前只转 0.6～1.2 圈，经常不够一圈 → 整体加大
-const FLIP_MIN = 0.72, FLIP_PER_K = 1.4;      // 翻板转几圈 = 0.72 + 1.4 × 力度：力度 0.2 正好一圈，0.55 一圈半，0.9 两圈；轻一点就差一点
-const SHOVE_MIN = 0.72, SHOVE_PER_K = 1.4;    // 转板转几个半圈，同上：力度 0.2 正好半圈（Shove-it），0.9 一整圈（360 Shove-it）
+// 2026-11-06 用户说转的幅度少了 → 加大；2026-11-07 又说"再大一点、转的时间长一点、有一点矫正" → 再加大、转慢一点、往整圈靠一点
+// 手机上随手一拨的力度大多在 0.1～0.45
+const FLIP_MIN = 0.9, FLIP_PER_K = 1.6;       // 翻板转几圈（矫正前）= 0.9 + 1.6 × 力度：力度 0.1 约一圈，0.4 一圈半，0.7 两圈，1 两圈半
+const SHOVE_MIN = 0.9, SHOVE_PER_K = 1.6;     // 转板转几个半圈，同上：力度 0.1 约半圈（Shove-it），0.7 一整圈（360 Shove-it）
+const SNAP_PULL = 0.6;                        // 矫正：要转的圈数往最近的整圈（转板：整半圈）靠一点（差 0.2 圈会变成差 0.08 圈左右），连续变化、不会一下跳到整圈
 const MAX_TURNS = 3;                          // 连着拨几次，最多也就转 3 圈
-const SPIN_TAU = 0.2;                         // 拨完板子先转得快、再慢慢停：0.2 秒转完 63%，0.6 秒转完 95%
-const SNAP_TOL = 0.45, SNAP_TOL_S = 0.4;      // 接板时离"正"还差 26°（转板 23°）以内，脚会把板子踩正；差得更多就停在那个歪的角度
-const LAND_TOL = 0.6;                         // 落地时板子离"正"还差 35° 以内才站得住（26°～35° 会晃）
+const SPIN_TAU = 0.3;                         // 拨完板子先转得快、再慢慢停：0.3 秒转完 63%，0.9 秒转完 95%（以前 0.2 秒，用户嫌转的时间短）
+const SNAP_TOL = 0.6, SNAP_TOL_S = 0.52;      // 接板时离"正"还差 34°（转板 30°）以内，脚会把板子踩正；差得更多就停在那个歪的角度
+const LAND_TOL = 0.72;                        // 落地时板子离"正"还差 41° 以内才站得住（34°～41° 会晃）
+// 矫正：x 圈 → 往整数靠（平滑的"磁铁"：整数附近变平，半圈附近变陡）
+const pullWhole = (x) => x - (SNAP_PULL * Math.sin(2 * Math.PI * x)) / (2 * Math.PI);
 // 接板：离最近的"正"够近就踩正，不然停在原地
 const snapNear = (a, unit, tol) => { const r = Math.round(a / unit) * unit; return Math.abs(a - r) <= tol ? r : a; };
 // 离最近的"正着"差多少（带正负）
@@ -190,7 +194,7 @@ export class Skater {
     const auto = clock == null || !!(this.I && this.I.auto);
     k = clamp(k == null ? 0.34 : k, 0, 1);
     // 力度 → 要转多少：自动接板（键盘 / 简单模式）时取整圈，好落地
-    let turns = (which === 'front' ? FLIP_MIN + FLIP_PER_K * k : SHOVE_MIN + SHOVE_PER_K * k);
+    let turns = pullWhole(which === 'front' ? FLIP_MIN + FLIP_PER_K * k : SHOVE_MIN + SHOVE_PER_K * k);
     if (auto) turns = Math.max(1, Math.round(turns));
     const live = a.flicked && !a.caught; // 上一下还没接住：接着加
     if (which === 'front') { a.flipGoal = clamp((live ? a.flipGoal : this.flipA) + dir * turns * TAU, -MAX_TURNS * TAU, MAX_TURNS * TAU); a.flipDir = dir; if (!live) a.shoveGoal = this.shoveA; }
@@ -215,6 +219,15 @@ export class Skater {
     this.flipT = snapNear(this.flipA, TAU, SNAP_TOL);
     this.shoveT = snapNear(this.shoveA, Math.PI, SNAP_TOL_S);
     a.catchErr = Math.max(Math.abs(this.flipT - this.flipA), Math.abs(this.shoveT - this.shoveA));
+    // 接得早了还是晚了、差多少度（回放里显示，帮玩家看自己哪里接早了）
+    const one = (ang, d, unit, tol, which) => {
+      if (!d) return null;
+      const x = ang * d, done = Math.floor(x / unit), r = x - done * unit;
+      const early = done <= 0 || r >= unit / 2, off = early ? unit - r : r;
+      return { which, kind: off <= tol ? 'ok' : early ? 'early' : 'late', deg: Math.round((off * 180) / Math.PI), rel: off / tol };
+    };
+    const cf = one(this.flipA, a.flipDir, TAU, SNAP_TOL, 'flip'), cs = one(this.shoveA, a.shoveDir, Math.PI, SNAP_TOL_S, 'shove');
+    a.catchInfo = !cf ? cs : !cs ? cf : cf.rel >= cs.rel ? cf : cs;
     this.flipW = this.shoveW = 0;
     this.cb.onCatch && this.cb.onCatch(a.catchErr);
   }
@@ -298,6 +311,8 @@ export class Skater {
     return PEN;
   }
   _penAt(cx, cz, pts, gf) { this._cx = cx; this._cz = cz; this._gf = gf; return this._pen(pts, 0, HULL.length); }
+  // 板身（板头、板尾、板边，不算轮子）穿进东西多深：往旁边和往上取近的那个
+  _bodyPen(x, y, z, q, pitch, flip, gf) { const pts = this._hull(x, y, z, q, pitch, flip, 0); this._cx = x; this._cz = z; this._gf = gf; const r = this._pen(pts, 0, NW); return Math.max(r.wall, r.up); }
   // 某个点所在的墙朝哪边（水平法线，指向空的那边）；找不到就用"从这个点指向板子中心"
   _wallNormalAt(x, z, y, cx, cz) {
     let wx = 0, wz = 0;
@@ -360,7 +375,7 @@ export class Skater {
   _ground(dt, I) {
     const T = this.T;
     if (this.flipA) { this.flipA *= Math.exp(-22 * dt); if (Math.abs(this.flipA) < 1e-3) this.flipA = 0; }
-    const h0 = this.heading;
+    const h0 = this.heading, px0 = this.p.x, pz0 = this.p.z; // 原地转会绕一头的轮子转，位置也跟着变：撞到东西退回时要一起退回
     let q = T.query(this.p.x, this.p.z, qA);
     this.gx = q.gx; this.gz = q.gz; this.feat = q.f;
     this.lean = I.lean || 0;
@@ -384,6 +399,7 @@ export class Skater {
       else this.manual.t += dt;
     }
     const mt = this.manual ? (this.manual.kind === 'manual' ? 1 : -1) * clamp(this.manA, 0, 1.1) * 0.27 : 0;
+    const man0 = this.manPitch, kick0 = this.kickPitch; // 翘板角改之前的值（下面防穿模用）
     this.manPitch += (mt - this.manPitch) * damp(18, dt);
     this.popPitch *= Math.exp(-10 * dt);
     // ---- 速度 ----
@@ -431,6 +447,7 @@ export class Skater {
         // 像真的 Kickturn 一样绕着后轮（按住板头时绕前轮）转：那一头的轮子不动，板子另一头甩过去（手指一直在板子上）
         const pv = (I.kickPivot === 1 ? 1 : -1) * (this.fakie ? -1 : 1) * TRUCK_Z * (kk < 1 ? kk : 1);
         const hx = Math.sin(this.heading), hz = Math.cos(this.heading), px = this.p.x + hx * pv, pz = this.p.z + hz * pv;
+        if (!(this.kickT > 0)) this.kickSign = 1; // 新的一次原地转：翘起来的是哪一头（掉头变 Fakie 时跟着反过来，见下面）
         this.heading += kick * kk; this.kickAcc += Math.abs(kick) * kk; this.kickT = 0.28;
         this.p.x = px - Math.sin(this.heading) * pv; this.p.z = pz - Math.cos(this.heading) * pv;
       }
@@ -439,9 +456,25 @@ export class Skater {
       this.kickT -= dt;
       if (this.kickT <= 0) { if (this.kickAcc > 1.0) this.cb.onKick && this.cb.onKick(this.kickAcc); this.kickAcc = 0; }
     }
-    this.kickPitch += ((this.kickT > 0 && this.kickAcc > 0.12 ? 0.15 : 0) - this.kickPitch) * damp(16, dt);
+    this.kickPitch += ((this.kickT > 0 && this.kickAcc > 0.12 ? 0.15 * (this.kickSign || 1) : 0) - this.kickPitch) * damp(16, dt);
+    // 翘板（原地转、Manual）会让另一头往下压，原地转会把板头甩过去：贴着矮台子（比如 Manual 台）时板头会压进 / 甩进台子
+    // → 板身（不算轮子）会因为这一步压进东西里，就退回这一步之前的翘板角、朝向和位置（板头顶在台子边上停住）
+    if (this.manPitch !== man0 || this.kickPitch !== kick0 || this.kickT > 0) {
+      const gf = Math.hypot(this.gx, this.gz) < 0.3 ? this.feat : NOWALL, P = this.p;
+      const body = () => { this._groundFrame(); return this._bodyPen(P.x, P.y, P.z, this.qv, this.visPitch(), this.flipA, gf); };
+      const now = gf === NOWALL ? 0 : body(); // 只在平地上管（坡上板身本来就离坡面很近）
+      if (now > 0.006) {
+        const st = [this.manPitch, this.kickPitch, this.heading, P.x, P.z];
+        this.manPitch = man0; this.kickPitch = kick0; this.heading = h0; P.x = px0; P.z = pz0;
+        if (!(now > body() + 1e-4)) { [this.manPitch, this.kickPitch, this.heading, P.x, P.z] = st; this._groundFrame(); } // 不是这一步造成的（本来就贴着）：照常
+      }
+    }
     // 速度变成负的（比如冲坡没冲上去往回滑）：掉头变 Fakie。侧倾和侧滑是按行进方向算的，掉头后符号也要反过来（实际倾斜不变）
-    if (s < 0) { this.heading += Math.PI; s = -s; this.fakie = !this.fakie; this.roll = -this.roll; this.rollV = -this.rollV; this.slip = -this.slip; }
+    if (s < 0) {
+      this.heading += Math.PI; s = -s; this.fakie = !this.fakie; this.roll = -this.roll; this.rollV = -this.rollV; this.slip = -this.slip;
+      // 翘板角也是按行进方向算的：一起反过来，翘起来的还是同一头（不然原地转时板头板尾会一下子换过来，板头戳进旁边的台子）
+      this._flipPitchSign();
+    }
     this.s = s;
     // ---- 移动 ----
     fx = Math.sin(this.heading); fz = Math.cos(this.heading);
@@ -469,16 +502,22 @@ export class Skater {
       this._wheelTilt(nx, nz, q2, dt);
       const gfN = Math.hypot(q2.gx, q2.gz) < 0.3 ? q2.f : NOWALL;
       const pen = this._penAt(nx, nz, this._hull(nx, q2.h, nz, this.qv, this.visPitch(), this.flipA, 0), gfN);
-      if (pen.wall > 0) {
-        const nw = pen.wall, P = HP[pen.wallI], w = this._wallNormalAt(P.x, P.z, P.y, nx, nz);
+      let nw = pen.wall, wI = pen.wallI;
+      // 板头 / 板尾比旁边的矮台子低（比如 Manual 台 16 厘米，板头离地 13 厘米）：板头会顶在台子侧面上，不能伸进去
+      // （按"往上抬更近"算会被当成踩上去，地面上不处理，板头能伸进台子 20 厘米）。只在平地上这样算，坡上不算
+      if (!(nw > 0) && gfN !== NOWALL) { const b = this._pen(HP, 0, NW); if (b.up > 0.006) { nw = b.up; wI = b.upI; } }
+      if (nw > 0) {
+        const P = HP[wI], w = this._wallNormalAt(P.x, P.z, P.y, nx, nz);
         const nh = this.heading, nTilt = this.gTilt;
         this.heading = h0; this.gx = ogx; this.gz = ogz; this.gTilt = oTilt; this.n.set(-ogx, 1, -ogz).normalize(); this._groundFrame();
         // 原来就已经戳在里面（比如落地时贴着东西）：往外走的移动照样放行，不然会卡住不动
-        const was = this._penAt(ox, oz, this._hull(ox, oy, oz, this.qv, this.visPitch(), this.flipA, 0), Math.hypot(ogx, ogz) < 0.3 ? this.feat : NOWALL).wall;
+        const gf0 = Math.hypot(ogx, ogz) < 0.3 ? this.feat : NOWALL;
+        let was = this._penAt(px0, pz0, this._hull(px0, oy, pz0, this.qv, this.visPitch(), this.flipA, 0), gf0).wall;
+        if (!(was > 0) && gf0 !== NOWALL) { const b = this._pen(HP, 0, NW); if (b.up > 0.006) was = b.up; }
         if (!(was > 0 && nw < was - 1e-4)) {
-          this.p.set(ox, oy, oz);
+          this.p.set(px0, oy, pz0);
           if (was > 0) { // 卡在里面就一点点推出来（只在平的地方推，免得推下台子）
-            const d = Math.min(0.02, was), xx = ox + w[0] * d, zz = oz + w[1] * d, hh = T.height(xx, zz);
+            const d = Math.min(0.02, was), xx = px0 + w[0] * d, zz = pz0 + w[1] * d, hh = T.height(xx, zz);
             if (Math.abs(hh - oy) < 0.03) this.p.set(xx, hh, zz);
           }
           this._wallHit(vx, vz, w);
@@ -555,6 +594,8 @@ export class Skater {
     const l = Math.hypot(wx, wz);
     return l > 1e-6 ? [wx / l, wz / l] : null;
   }
+  // 掉头（Fakie 和正脚互换）时：翘板角是按行进方向算的，要一起反过来，翘起来的还是同一头（不然板头板尾会一下子换过来，戳进旁边的台子）
+  _flipPitchSign() { this.kickPitch = -this.kickPitch; this.kickSign = -(this.kickSign || 1); this.popPitch = -this.popPitch; this.manPitch = -this.manPitch; }
   _wallHit(vx, vz, wn) {
     this.slip = 0; // 撞墙后速度方向重新算（侧滑已经包含在传进来的速度里）
     let w = wn || this._wallNormal(this.p.y);
@@ -565,7 +606,7 @@ export class Skater {
     const ux = vx - vn * w[0] * 1.25, uz = vz - vn * w[1] * 1.25, l = Math.hypot(ux, uz);
     if (l > 0.12) {
       const nh = Math.atan2(ux, uz), d = Math.abs(((nh - this.heading + 3 * Math.PI) % TAU) - Math.PI);
-      if (d > Math.PI / 2) { this.heading = nh; this.fakie = !this.fakie; } else this.heading = nh;
+      if (d > Math.PI / 2) { this.heading = nh; this.fakie = !this.fakie; this._flipPitchSign(); } else this.heading = nh;
       this.s = l * 0.9;
     } else this.s = 0;
     if (this.impactCD <= 0 && -vn > 1) { this.impactCD = 0.25; this.cb.onImpact && this.cb.onImpact(-vn); }
@@ -825,7 +866,7 @@ export class Skater {
       const gp = name === '5-0' ? 0.2 : name === 'Nosegrind' ? -0.2 : 0;
       this.grind = { r, u: c.u, sp, type, name, t: 0, gf, pitch: gp, pitchLocal: travelDot >= 0 ? gp : -gp, locked: !!this._lockNext };
       this.p.set(c.x, c.y, c.z);
-      this._grindPose();
+      this._grindPose(); this._grindClear();
       this.cb.onGrind && this.cb.onGrind(true, this.grind);
       return true;
     }
@@ -986,6 +1027,17 @@ export class Skater {
       return;
     }
     this._grindPose();
+    this._grindClear();
+  }
+  // 在矮的台边上（比如 16 厘米的 Manual 台）磨 / 滑：板头板尾翘太多会戳进地里 → 翘少一点（上杆那一刻和每一步都检查）
+  _grindClear() {
+    const g = this.grind; if (!g) return;
+    for (let k = 0; k < 8; k++) {
+      const pts = this._hull(this.p.x, this.p.y, this.p.z, this.qv, this.visPitch(), this.flipA, this.shoveA);
+      let worst = 0; for (let i = 0; i < NW; i++) worst = Math.max(worst, this.T.height(pts[i].x, pts[i].z) - pts[i].y);
+      if (worst <= 0.004) break;
+      g.pitchLocal = (g.pitchLocal || 0) * 0.6; this.popPitch *= 0.6; this.manPitch *= 0.6;
+    }
   }
   _endGrind(why) {
     const g = this.grind; if (!g) return;

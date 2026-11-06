@@ -1,6 +1,11 @@
-// 音效：开局时用"物理建模"合成一批真实感的采样（板子木头的共振、金属支架的高频、轮子胶的闷响、地面的颗粒感），
+// 音效：起跳、落地、接板用真实录音拼成（见下面 REAL）；其他的用"物理建模"合成一批采样（板子木头的共振、金属支架的高频、轮子胶的闷响、地面的颗粒感），
 // 播放时每次随机挑一个、音高和音量稍微变一下，不会每次一模一样；再加一点室外的短混响。背景节拍保留。
 const rnd = (a, b) => a + Math.random() * (b - a);
+// 起跳、落地、接板用真实录音拼成（tools/mksfx.py；原始录音是 Kenney 的 CC0 公共领域录音）；其他的还是合成的
+import P1 from '../assets/sfx_pop1.mp3'; import P2 from '../assets/sfx_pop2.mp3'; import P3 from '../assets/sfx_pop3.mp3';
+import L1 from '../assets/sfx_land1.mp3'; import L2 from '../assets/sfx_land2.mp3'; import L3 from '../assets/sfx_land3.mp3';
+import C1 from '../assets/sfx_catch1.mp3'; import C2 from '../assets/sfx_catch2.mp3'; import C3 from '../assets/sfx_catch3.mp3';
+const REAL = { pop: [P1, P2, P3], land: [L1, L2, L3], catch: [C1, C2, C3] };
 
 // 一段采样：modes = [[频率, 衰减时间, 音量], …]（衰减的正弦，模拟木板 / 金属的共振），noise = 起始的瞬间噪声
 function synth(sr, len, parts) {
@@ -92,7 +97,22 @@ const NOISE = {
 };
 // 混响的冲激响应：必须按声音设备自己的采样率做（混响器不接受采样率不一样的数据，会直接报错、整个声音都起不来）
 const makeIR = (sr) => [0, 1].map(() => { const a = new Float32Array(Math.floor(sr * 0.45)); for (let i = 0; i < a.length; i++) { const t = i / sr; a[i] = (Math.random() * 2 - 1) * Math.exp(-t * 11) * (t < 0.012 ? t / 0.012 : 1); } return a; });
-const PRE = { smp: {}, noise: {}, todo: [...Object.keys(NOISE).map((k) => ['n', k]), ...Object.keys(BANK).map((k) => ['s', k])], timer: 0 };
+const PRE = { smp: {}, noise: {}, real: {}, realP: null, todo: [...Object.keys(NOISE).map((k) => ['n', k]), ...Object.keys(BANK).map((k) => ['s', k])], timer: 0 };
+// 把真实录音解出来（不需要声音设备，打开游戏后就能做）：去掉 MP3 开头那一小段空白，起跳声才不会慢半拍
+function decodeReal() {
+  if (PRE.realP) return PRE.realP;
+  const OC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  let oc = null; try { oc = OC && new OC(1, 1, SR); } catch (e) { oc = null; }
+  if (!oc) return (PRE.realP = Promise.resolve());
+  const trim = (x) => { let pk = 0; for (let i = 0; i < x.length; i++) pk = Math.max(pk, Math.abs(x[i])); let i0 = 0; while (i0 < x.length && Math.abs(x[i0]) < pk * 0.02) i0++; return x.slice(Math.max(0, i0 - 48)); };
+  const one = (u) => {
+    const b = atob(u.slice(u.indexOf(',') + 1)), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    return new Promise((res, rej) => { const p = oc.decodeAudioData(a.buffer, res, rej); if (p && p.then) p.then(res, rej); }).then((ab) => trim(ab.getChannelData(0)));
+  };
+  PRE.realP = Promise.all(Object.keys(REAL).map((k) => Promise.all(REAL[k].map(one)).then((arr) => { PRE.real[k] = arr; if (Aud.ctx) Aud._useReal(); })))
+    .catch(() => { /* 解不出来就继续用合成的声音 */ });
+  return PRE.realP;
+}
 function preStep() { // 算一种声音（4 个版本）
   const j = PRE.todo.shift(); if (!j) return false;
   if (j[0] === 'n') PRE.noise[j[1]] = NOISE[j[1]](); else PRE.smp[j[1]] = [0, 1, 2, 3].map(() => BANK[j[1]]());
@@ -103,6 +123,7 @@ export const Aud = {
   ctx: null, sfx: true, music: true, _mus: null, smp: {},
   // 打开游戏后调用：趁空闲一点点把采样算好（每次只算一种，不会卡画面）
   prep(delay) {
+    setTimeout(() => decodeReal(), delay || 0);
     if (PRE.timer || !PRE.todo.length) return;
     const run = () => { PRE.timer = 0; if (this.ctx || !preStep()) return; PRE.timer = setTimeout(run, 40); };
     PRE.timer = setTimeout(run, delay || 0);
@@ -123,6 +144,7 @@ export const Aud = {
       this.fx = c.createGain(); this.fx.gain.value = this.sfx ? 1 : 0; this.fx.connect(this.out); this.fx.connect(this.rev);
       this.mg = c.createGain(); this.mg.gain.value = this.music ? 0.22 : 0; this.mg.connect(this.out);
       for (const k of Object.keys(PRE.smp)) this.smp[k] = PRE.smp[k].map((a) => buf([a]));
+      this._buf = buf; decodeReal(); this._useReal(); // 真实录音解好了就换上（还没解好的，解好那一刻再换）
       // 持续的声音：轮子滚（粉红噪声 + 低沉的隆隆声 + 轻微的轴承声）、木头坡的空心声、磨杆、滑板身擦杆、横着蹭地
       const loop = (b, chain) => {
         const s = c.createBufferSource(); s.buffer = b; s.loop = true; s.loopStart = Math.random(); s.loopEnd = 2;
@@ -142,6 +164,10 @@ export const Aud = {
       this.bear.connect(this.bearG); this.bearG.connect(this.fx); this.bear.start();
       this._startMusic();
     } catch (e) { console.error(e); this.ctx = null; }
+  },
+  _useReal() {
+    if (!this.ctx || !this._buf) return;
+    for (const k of Object.keys(PRE.real)) if (!this.smp[k + '_real']) { this.smp[k] = PRE.real[k].map((a) => this._buf([a])); this.smp[k + '_real'] = true; }
   },
   // 播放一个采样：音量 vol，音高随机浮动
   play(name, vol, rate) {
@@ -199,7 +225,7 @@ export const Aud = {
     if (q === 'sketchy') this.burst(1100, 0.3, 0.25, 'bandpass', 1.2);
   },
   clack(sp) { this.play('clack', Math.min(0.7, 0.2 + sp * 0.08), 0.9 + Math.min(0.3, sp * 0.04)); },
-  kick() { this.play('kick', 0.5); },
+  kick() { if (this.smp.land_real) this.play('land', 0.3, 1.12); else this.play('kick', 0.5); }, // 原地转身：前轮砸回地面（有真实录音就用落地声，轻一点）
   flick() { this.play('flick', 0.5); },
   catch() { this.play('catch', 0.6); },
   grindOn() { this.play('grindOn', 0.6); },
