@@ -89,8 +89,9 @@ const NOISE = {
     return [d];
   },
   wb: () => { const d = new Float32Array(SR * 2); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return [d]; },
-  ir: () => [0, 1].map(() => { const a = new Float32Array(Math.floor(SR * 0.45)); for (let i = 0; i < a.length; i++) { const t = i / SR; a[i] = (Math.random() * 2 - 1) * Math.exp(-t * 11) * (t < 0.012 ? t / 0.012 : 1); } return a; }),
 };
+// 混响的冲激响应：必须按声音设备自己的采样率做（混响器不接受采样率不一样的数据，会直接报错、整个声音都起不来）
+const makeIR = (sr) => [0, 1].map(() => { const a = new Float32Array(Math.floor(sr * 0.45)); for (let i = 0; i < a.length; i++) { const t = i / sr; a[i] = (Math.random() * 2 - 1) * Math.exp(-t * 11) * (t < 0.012 ? t / 0.012 : 1); } return a; });
 const PRE = { smp: {}, noise: {}, todo: [...Object.keys(NOISE).map((k) => ['n', k]), ...Object.keys(BANK).map((k) => ['s', k])], timer: 0 };
 function preStep() { // 算一种声音（4 个版本）
   const j = PRE.todo.shift(); if (!j) return false;
@@ -116,7 +117,8 @@ export const Aud = {
       const nb = (this.nb = buf(PRE.noise.nb)), wb = (this.wb = buf(PRE.noise.wb));
       this.out = c.createGain(); this.out.gain.value = 0.9; this.out.connect(c.destination);
       // 室外的短混响（周围的墙和地面反射回来一点点）
-      this.rev = c.createConvolver(); this.rev.buffer = buf(PRE.noise.ir);
+      this.rev = c.createConvolver();
+      { const ir = makeIR(c.sampleRate), b = c.createBuffer(2, ir[0].length, c.sampleRate); ir.forEach((a, i) => b.getChannelData(i).set(a)); this.rev.buffer = b; }
       const wet = c.createGain(); wet.gain.value = 0.22; this.rev.connect(wet); wet.connect(this.out);
       this.fx = c.createGain(); this.fx.gain.value = this.sfx ? 1 : 0; this.fx.connect(this.out); this.fx.connect(this.rev);
       this.mg = c.createGain(); this.mg.gain.value = this.music ? 0.22 : 0; this.mg.connect(this.out);
@@ -139,7 +141,7 @@ export const Aud = {
       this.bear = c.createOscillator(); this.bear.type = 'sine'; this.bearG = c.createGain(); this.bearG.gain.value = 0;
       this.bear.connect(this.bearG); this.bearG.connect(this.fx); this.bear.start();
       this._startMusic();
-    } catch (e) { this.ctx = null; }
+    } catch (e) { console.error(e); this.ctx = null; }
   },
   // 播放一个采样：音量 vol，音高随机浮动
   play(name, vol, rate) {

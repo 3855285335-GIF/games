@@ -725,4 +725,4 @@ requestAnimationFrame(frame);
 let glReady = false;
 requestAnimationFrame(() => setTimeout(() => { try { renderer.compile(scene, cam); } catch (e) { console.error(e); } glReady = true; }, 0));
 Aud.prep(1200); // 菜单出来以后趁空闲把音效算好，点开始时不用再等
-window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip };
+window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, Aud, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip };
