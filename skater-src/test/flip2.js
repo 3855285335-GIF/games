@@ -66,21 +66,21 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
       place(2.6, -9.6, 0, 4);
       return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (tc != null && t >= tc) { i.fingers = 1; i.touching = 1; i.capT = capT == null ? 2.0 : capT; } });
     };
-    out.good = kick(0.34, 0.75);   // 力度 0.34 ≈ 正好一圈：转完以后什么时候接都行
-    out.good2 = kick(0.5, 0.38);   // 力度 0.5 = 转 1.25 圈：在转到一圈的那一下接住（拨完 0.27～0.39 秒）
-    out.early = kick(0.34, 0.15);  // 才转了一点就接
-    out.late = kick(0.5, 0.95);    // 力度 0.5 转过头了还不接
-    out.light = kick(0.15, 0.9);   // 拨太轻：转不到一圈
-    out.never = kick(0.34, null);
-    out.oldFinger = kick(0.34, 0.75, 0.5); // 一直按着没离开过板的手指，不算接住
-    out.double = kick(1.0, 0.9);
+    out.good = kick(0.2, 0.75);    // 力度 0.2 ≈ 正好一圈：转完以后什么时候接都行
+    out.good2 = kick(0.38, 0.38);  // 力度 0.38 = 转 1.25 圈：在转到一圈的那一下接住（拨完 0.27～0.39 秒）
+    out.early = kick(0.2, 0.15);   // 才转了一点就接
+    out.late = kick(0.38, 0.95);   // 拨重了转过头还不接
+    out.light = kick(0.02, 0.9);   // 拨太轻：转不到一圈
+    out.never = kick(0.2, null);
+    out.oldFinger = kick(0.2, 0.75, 0.5); // 一直按着没离开过板的手指，不算接住
+    out.double = kick(0.9, 0.9);   // 力度 0.9 ≈ 两圈
     // 4 Shove-it：力度不同转速不同；接在 90° 会摔
     const shove = (k, tc) => { place(2.6, -9.6, 0, 4); return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('back', -1, k, 1.0); if (t >= tc) { i.fingers = 1; i.capT = 2.0; } }); };
-    out.shoveGood = shove(0.34, 0.8);
-    out.shoveHalf = shove(0.34, 0.2);
+    out.shoveGood = shove(0.2, 0.8);
+    out.shoveHalf = shove(0.2, 0.2);
     // 4c 力度一点点不同，转的角度就不同（不接板，看最后停在多少度）
     const rest = (k) => { place(2.6, -9.6, 0, 4); let a = 0; run(0.9, (t) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); a = sk.flipA; }); return Math.abs(a); };
-    out.rest = [0.3, 0.32, 0.34, 0.36, 0.38].map(rest);
+    out.rest = [0.1, 0.12, 0.14, 0.16, 0.18].map(rest);
     // 5 低跳 + 马上猛翻：翻的时候板边不能穿进地里
     place(2.6, -9.6, 0, 4); out.lowFlip = run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', 0); if (at(t, 0.01)) sk.flick('front', 1, 1, 1.0); if (t > 0.3) { i.fingers = 1; i.capT = 2; } });
     // 6 键盘 / 简单模式：自动接板

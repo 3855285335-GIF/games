@@ -37,8 +37,11 @@ export class Lighting {
     this.hemi.color.set(P.hs); this.hemi.groundColor.set(P.hg); this.hemi.intensity = P.hi;
     this.renderer.toneMappingExposure = P.exp;
     const M = this.mats;
-    M.lampHead.emissiveIntensity = P.lamp; M.glow.opacity = P.glow;
-    for (const b of M.bld) b.emissiveIntensity = P.win;
+    // 材质是用到才做的：这张场地没有的东西（比如楼房窗户）就不用为了调亮度专门做出来
+    const has = (k) => { const d = Object.getOwnPropertyDescriptor(M, k); return d && 'value' in d; };
+    if (has('lampHead')) M.lampHead.emissiveIntensity = P.lamp;
+    if (has('glow')) M.glow.opacity = P.glow;
+    if (has('bld')) for (const b of M.bld) b.emissiveIntensity = P.win;
     this.head.intensity = P.head;
   }
 }

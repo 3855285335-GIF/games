@@ -1,5 +1,5 @@
 // 主程序：渲染、地图、玩家、相机、模式流程、联机
-import { WebGLRenderer, Scene, PerspectiveCamera, DirectionalLight, HemisphereLight, Fog, Color, Vector3, Quaternion, ACESFilmicToneMapping, SRGBColorSpace, PCFShadowMap, Mesh, CylinderGeometry, MeshBasicMaterial, AdditiveBlending } from 'three';
+import { WebGLRenderer, Scene, PerspectiveCamera, DirectionalLight, HemisphereLight, Fog, Color, Vector3, Quaternion, ACESFilmicToneMapping, SRGBColorSpace, PCFShadowMap, Mesh, CylinderGeometry, MeshBasicMaterial, AdditiveBlending, CanvasTexture, PlaneGeometry, Matrix4 } from 'three';
 import { buildMap, MAPS } from './maps.js';
 import { buildScene, getMats } from './scenery.js';
 import { makeSky } from './parkmesh.js';
@@ -97,6 +97,27 @@ let board = makeBoard(cfg); scene.add(board.root);
 /* 长按磨杆：能磨的那段杆子发光 + 前几次显示文字提示 */
 const railGlow = new Mesh(new CylinderGeometry(0.055, 0.055, 1, 10, 1), new MeshBasicMaterial({ color: 0x8ff6ff, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, fog: false, blending: AdditiveBlending }));
 railGlow.visible = false; railGlow.renderOrder = 5; scene.add(railGlow);
+/* 板子底下的接触阴影：很淡的一块椭圆暗影，贴着地最深、离地越高越淡（阴天里板子底下照不到天光，不加的话板子像飘着） */
+const blob = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  const geo = new PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2);
+  const m = new Mesh(geo, new MeshBasicMaterial({ color: 0x000000, map: new CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -3 }));
+  m.renderOrder = 3; m.matrixAutoUpdate = false; m.visible = false; scene.add(m); return m;
+})();
+const blobQ = { h: 0, gx: 0, gz: 0, f: null }, bF = new Vector3(), bN = new Vector3(), bR = new Vector3(), bM = new Matrix4();
+function updateBlob(P, q, on) {
+  const r = T.query(P.x, P.z, blobQ), up = P.y - r.h;
+  const k = on && !r.wall ? Math.max(0, 1 - Math.max(0, up - 0.02) / 0.55) : 0;
+  blob.visible = k > 0.01; if (!blob.visible) return;
+  blob.material.opacity = 0.4 * k;
+  bN.set(-r.gx, 1, -r.gz).normalize();
+  bF.set(0, 0, 1).applyQuaternion(q); bF.addScaledVector(bN, -bF.dot(bN)); if (bF.lengthSq() < 1e-6) bF.set(0, 0, 1); bF.normalize();
+  bR.crossVectors(bN, bF).normalize();
+  const s = 1 + Math.max(0, up) * 0.6; // 离地高一点，影子散开一点
+  bM.makeBasis(bR.multiplyScalar(0.34 * s), bN, bF.multiplyScalar(0.92 * s)).setPosition(P.x, r.h + 0.004, P.z);
+  blob.matrix.copy(bM); blob.matrixWorldNeedsUpdate = true;
+}
 const glowA = new Vector3(), glowB = new Vector3(), glowDir = new Vector3(), glowUp = new Vector3(0, 1, 0);
 function showRailTarget(tg, t, I) {
   if (!tg) { railGlow.visible = false; show('railTip', false); return; }
@@ -641,6 +662,7 @@ function frame(now) {
       poseBoard(board, gl ? tmpP : sk.p, renderQ, pitch, pitch >= 0 ? -DECK.truckZ : DECK.truckZ, sk.flipA, sk.shoveA, sk.wheelRot, vr, vr * 0.45, feel.comp);
       if (state === 'play') rec.push(dt, sk, renderQ, pitch, sk.wheelRot, vr, feel.comp);
     }
+    updateBlob(board.root.position, board.root.quaternion, state !== 'menu' && state !== 'garage');
     // 相机
     if (state === 'replay' && player && player.cam > 0) {
       orbitA += dt * 0.5;
@@ -693,10 +715,14 @@ function frame(now) {
       if (sk8.state && sk8.state.phase !== 'over') sk8.ui();
     }
     if (window.__camHook) window.__camHook(cam, P); // 测试用：近景检查模型
-    if (!window.__noRender) renderer.render(scene, cam);
+    if (!window.__noRender && glReady) renderer.render(scene, cam);
   } catch (e) { showErr(e && e.message ? e.message : String(e)); console.error(e); }
 }
 applyTime(); applyQuality();
 online.connect(myRoom, mapId); roomInfo();
 requestAnimationFrame(frame);
-window.__dbg = { __setTime: (v) => { timeLeft = v; }, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip };
+// 先让菜单（网页部分）显示出来，再编译 3D 画面的着色器：手机上编译要卡一下，放在菜单出来之后，看起来打开得更快
+let glReady = false;
+requestAnimationFrame(() => setTimeout(() => { try { renderer.compile(scene, cam); } catch (e) { console.error(e); } glReady = true; }, 0));
+Aud.prep(1200); // 菜单出来以后趁空闲把音效算好，点开始时不用再等
+window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip };

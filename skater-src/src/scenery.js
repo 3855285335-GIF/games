@@ -5,53 +5,64 @@ import { toWorld } from './terrain.js';
 import { buildQP, buildRamp, buildBox, buildStairs, buildPyr, buildBowl, bowlHolePath, buildRails } from './parkmesh.js';
 import * as TX from './textures.js';
 import { rng } from './util.js';
+import { buildWear } from './wear.js';
 
 let M = null;
 export function getMats(renderer) {
   if (M) return M;
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const t = (x) => { x.anisotropy = aniso; return x; };
-  const win = [TX.windows(5, '#9aa3ad'), TX.windows(6, '#b8ab98'), TX.windows(8, '#7f93a6')];
   // 水泥：高清贴图 + 凹凸（地面粗一点、坡面抹得光一点，有一点点反光）
-  const cg = TX.concreteHD(1, '#93918c', 0, true, 2048), ct = TX.concreteHD(2, '#b9b7b2', 1, false, 1024), cs = TX.concreteHD(3, '#9a9893', 0, false, 1024);
+  // 打开游戏时先用纯色小图顶上，高清的在后台线程里算，算好就换上（一般不到一秒；材质不变，不用重新编译着色器，画面也不会卡）
+  const HD = [[1, '#93918c', 0, true, 2048, 'ground', 0.7], [2, '#b9b7b2', 1, false, 1024, 'trans', 0.5], [3, '#9a9893', 0, false, 1024, 'side', 0.7]];
   const nm = (o, k) => { t(o.map); t(o.normalMap); return { map: o.map, normalMap: o.normalMap, normalScale: new Vector2(k, k) }; };
-  M = {
-    ground: new MeshStandardMaterial({ ...nm(cg, 0.7), roughness: 0.86 }),
-    trans: new MeshStandardMaterial({ ...nm(ct, 0.5), roughness: 0.62 }),
-    side: new MeshStandardMaterial({ ...nm(cs, 0.7), roughness: 0.9 }),
-    wood: new MeshStandardMaterial({ map: t(TX.plywood(4)), roughness: 0.7 }),
-    tile: new MeshStandardMaterial({ map: t(TX.tiles()), roughness: 0.35 }),
-    metal: new MeshStandardMaterial({ color: 0xd2d6dc, metalness: 0.95, roughness: 0.28 }),
-    steel: new MeshStandardMaterial({ color: 0x80858d, metalness: 0.5, roughness: 0.42 }),
-    rail: new MeshStandardMaterial({ map: t(TX.railStripes()), metalness: 0.3, roughness: 0.3 }),
-    w_yellow: new MeshStandardMaterial({ map: t(TX.paintedWood('#e9b437', 41)), roughness: 0.65 }),
-    w_blue: new MeshStandardMaterial({ map: t(TX.paintedWood('#2f86c9', 42)), roughness: 0.65 }),
-    wall: new MeshStandardMaterial({ map: t(TX.graffiti(21, 2048, 256)), roughness: 0.9 }),
-    graf: new MeshStandardMaterial({ map: t(TX.graffiti(7, 1024, 128)), roughness: 0.9 }),
-    fence: new MeshStandardMaterial({ map: t(TX.fence()), alphaTest: 0.5, side: DoubleSide, metalness: 0.5, roughness: 0.5 }),
-    grass: new MeshStandardMaterial({ map: t(TX.grass()), roughness: 1 }),
-    asphalt: new MeshStandardMaterial({ map: t(TX.asphalt()), roughness: 1 }),
-    tree: new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }),
-    bld: win.map(([m, e]) => new MeshStandardMaterial({ map: t(m), emissiveMap: e, emissive: new Color(0xffffff), emissiveIntensity: 0, roughness: 0.8 })),
-    roofTop: new MeshStandardMaterial({ color: 0x8d8f93, roughness: 0.95 }),
-    lamp: new MeshStandardMaterial({ color: 0x4a4e55, metalness: 0.6, roughness: 0.5 }),
-    lampHead: new MeshStandardMaterial({ color: 0xf4f1e8, emissive: new Color(0xffe2a8), emissiveIntensity: 0, roughness: 0.4 }),
-    benchWood: new MeshStandardMaterial({ color: 0x9a6b42, roughness: 0.8 }),
-    green: new MeshStandardMaterial({ color: 0x3f7a3a, flatShading: true, roughness: 0.9 }),
-    soil: new MeshStandardMaterial({ color: 0x4b3a2c, roughness: 1 }),
-    can: new MeshStandardMaterial({ color: 0x2f5f46, metalness: 0.5, roughness: 0.5 }),
-    ac: new MeshStandardMaterial({ color: 0xc9ccd0, metalness: 0.4, roughness: 0.55 }),
-    dark: new MeshStandardMaterial({ color: 0x26282c, roughness: 0.8 }),
-    glass: new MeshStandardMaterial({ color: 0x8fc4e8, metalness: 0.2, roughness: 0.08, transparent: true, opacity: 0.55 }),
-    decal: new MeshStandardMaterial({ map: TX.decalAtlas(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.9 }),
-    p_blue: new MeshStandardMaterial({ map: t(TX.painted('#2f7fd8', 31)), roughness: 0.6 }),
-    p_yellow: new MeshStandardMaterial({ map: t(TX.painted('#f2c230', 32)), roughness: 0.6 }),
-    p_red: new MeshStandardMaterial({ map: t(TX.painted('#d9473b', 33)), roughness: 0.6 }),
-    fenceWood: new MeshStandardMaterial({ map: t(TX.planks()), roughness: 0.9, side: DoubleSide }),
-    angle: new MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.85, roughness: 0.35 }),
-    glow: new MeshBasicMaterial({ map: TX.glow(), transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
+  const quick = (j) => nm(TX.flatTex(j[1]), j[6]);
+  // 每种材质用到时才做（贴图也是那时才画）：这张场地用不到的东西（草地、楼房窗户……）就不用花时间
+  const D = {
+    ground: () => new MeshStandardMaterial({ ...quick(HD[0]), roughness: 0.86 }),
+    trans: () => new MeshStandardMaterial({ ...quick(HD[1]), roughness: 0.62 }),
+    side: () => new MeshStandardMaterial({ ...quick(HD[2]), roughness: 0.9 }),
+    wood: () => new MeshStandardMaterial({ map: t(TX.plywood(4)), roughness: 0.7 }),
+    tile: () => new MeshStandardMaterial({ map: t(TX.tiles()), roughness: 0.35 }),
+    metal: () => new MeshStandardMaterial({ color: 0xd2d6dc, metalness: 0.95, roughness: 0.28 }),
+    steel: () => new MeshStandardMaterial({ color: 0x80858d, metalness: 0.5, roughness: 0.42 }),
+    rail: () => new MeshStandardMaterial({ map: t(TX.railStripes()), metalness: 0.3, roughness: 0.3 }),
+    w_yellow: () => new MeshStandardMaterial({ map: t(TX.paintedWood('#e9b437', 41)), roughness: 0.65 }),
+    w_blue: () => new MeshStandardMaterial({ map: t(TX.paintedWood('#2f86c9', 42)), roughness: 0.65 }),
+    wall: () => { const m = new MeshStandardMaterial({ map: t(TX.graffiti(21, 2048, 256)), roughness: 0.9 }); m.map.repeat.set(1 / 8, 4); return m; },
+    graf: () => { const m = new MeshStandardMaterial({ map: t(TX.graffiti(7, 1024, 128)), roughness: 0.9 }); m.map.repeat.set(1 / 6, 4); return m; },
+    fence: () => new MeshStandardMaterial({ map: t(TX.fence()), alphaTest: 0.5, side: DoubleSide, metalness: 0.5, roughness: 0.5 }),
+    grass: () => new MeshStandardMaterial({ map: t(TX.grass()), roughness: 1 }),
+    asphalt: () => new MeshStandardMaterial({ map: t(TX.asphalt()), roughness: 1 }),
+    tree: () => new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }),
+    bld: () => [TX.windows(5, '#9aa3ad'), TX.windows(6, '#b8ab98'), TX.windows(8, '#7f93a6')].map(([m, e]) => new MeshStandardMaterial({ map: t(m), emissiveMap: e, emissive: new Color(0xffffff), emissiveIntensity: 0, roughness: 0.8 })),
+    roofTop: () => new MeshStandardMaterial({ color: 0x8d8f93, roughness: 0.95 }),
+    lamp: () => new MeshStandardMaterial({ color: 0x4a4e55, metalness: 0.6, roughness: 0.5 }),
+    lampHead: () => new MeshStandardMaterial({ color: 0xf4f1e8, emissive: new Color(0xffe2a8), emissiveIntensity: 0, roughness: 0.4 }),
+    benchWood: () => new MeshStandardMaterial({ color: 0x9a6b42, roughness: 0.8 }),
+    green: () => new MeshStandardMaterial({ color: 0x3f7a3a, flatShading: true, roughness: 0.9 }),
+    soil: () => new MeshStandardMaterial({ color: 0x4b3a2c, roughness: 1 }),
+    can: () => new MeshStandardMaterial({ color: 0x2f5f46, metalness: 0.5, roughness: 0.5 }),
+    ac: () => new MeshStandardMaterial({ color: 0xc9ccd0, metalness: 0.4, roughness: 0.55 }),
+    dark: () => new MeshStandardMaterial({ color: 0x26282c, roughness: 0.8 }),
+    glass: () => new MeshStandardMaterial({ color: 0x8fc4e8, metalness: 0.2, roughness: 0.08, transparent: true, opacity: 0.55 }),
+    decal: () => new MeshStandardMaterial({ map: TX.decalAtlas(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.9 }),
+    p_blue: () => new MeshStandardMaterial({ map: t(TX.painted('#2f7fd8', 31)), roughness: 0.6 }),
+    p_yellow: () => new MeshStandardMaterial({ map: t(TX.painted('#f2c230', 32)), roughness: 0.6 }),
+    p_red: () => new MeshStandardMaterial({ map: t(TX.painted('#d9473b', 33)), roughness: 0.6 }),
+    fenceWood: () => new MeshStandardMaterial({ map: t(TX.planks()), roughness: 0.9, side: DoubleSide }),
+    angle: () => new MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.85, roughness: 0.35 }),
+    glow: () => new MeshBasicMaterial({ map: TX.glow(), transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
   };
-  M.wall.map.repeat.set(1 / 8, 4); M.graf.map.repeat.set(1 / 6, 4);
+  M = {};
+  for (const k of Object.keys(D)) Object.defineProperty(M, k, { configurable: true, enumerable: true, get() { const v = D[k](); Object.defineProperty(M, k, { value: v, writable: true, enumerable: true, configurable: true }); return v; } });
+  // 高清水泥：后台算好一张换一张（小图用完就扔掉）
+  TX.concreteLater(HD.map((j) => j.slice(0, 5)), (i, o) => {
+    const m = M[HD[i][5]];
+    if (m.map) m.map.dispose(); if (m.normalMap) m.normalMap.dispose();
+    m.map = t(o.map); m.normalMap = t(o.normalMap);
+    M.hdReady = (M.hdReady || 0) + 1;
+  });
   return M;
 }
 function W(f, lx, y, lz) { const p = toWorld(f, lx, lz); return [p[0], y, p[1]]; }
@@ -245,11 +256,12 @@ export function buildScene(T, renderer) {
   const gg = new ShapeGeometry(sh); gg.rotateX(-Math.PI / 2);
   const uv = gg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 4, uv.getY(i) / 4);
   const ground = new Mesh(gg, mats.ground); ground.receiveShadow = true; group.add(ground);
-  const map = { ground2: mats.ground, facade: mats.bld[0], bld0: mats.bld[0], bld1: mats.bld[1], bld2: mats.bld[2], trunk: mats.tree, leaves: mats.tree };
+  for (const m of buildWear(T)) group.add(m); // 接触阴影、蜡痕、黑印、胶印
+  const map = { ground2: () => mats.ground, facade: () => mats.bld[0], bld0: () => mats.bld[0], bld1: () => mats.bld[1], bld2: () => mats.bld[2], trunk: () => mats.tree, leaves: () => mats.tree }; // 用到才取（取的时候才做材质）
   const noCast = new Set(['fence', 'decal', 'facade', 'bld0', 'bld1', 'bld2', 'roofTop', 'glass']);
   for (const k in B) {
     if (B[k].empty) continue;
-    const m = new Mesh(B[k].geo(), map[k] || mats[k]);
+    const m = new Mesh(B[k].geo(), map[k] ? map[k]() : mats[k]);
     m.receiveShadow = k !== 'decal'; m.castShadow = !noCast.has(k);
     if (k === 'decal' || k === 'glass') m.renderOrder = 1;
     group.add(m);

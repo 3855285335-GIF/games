@@ -1,5 +1,5 @@
 // 根据地形数据生成公园画面
-import { Mesh, MeshStandardMaterial, Shape, Path, ShapeGeometry, CylinderGeometry, TubeGeometry, CatmullRomCurve3, Vector3, Matrix4, Group,
+import { Mesh, MeshStandardMaterial, Shape, Path, ShapeGeometry, CylinderGeometry, TubeGeometry, CatmullRomCurve3, Vector3, Matrix4, Quaternion, Group,
   IcosahedronGeometry, BoxGeometry, SphereGeometry, ShaderMaterial, BackSide, Color, DoubleSide, PlaneGeometry, MeshBasicMaterial } from 'three';
 import { MB, between } from './meshkit.js';
 import { toWorld, dirWorld } from './terrain.js';
@@ -167,7 +167,7 @@ export function bowlHolePath(f) {
   return p;
 }
 // 角铁包边：一条压在台面上、一条贴在侧面（L 形），沿着可磨的台边
-const _bx = new Vector3(), _by = new Vector3(), _bz = new Vector3();
+const _bx = new Vector3(), _by = new Vector3(), _bz = new Vector3(), _up = new Vector3(), _rq = new Quaternion();
 function angleIron(mb, r) {
   const hl = Math.hypot(r.dx, r.dz) || 1; let ox = r.dz / hl, oz = -r.dx / hl;
   const mx = (r.ax + r.bx) / 2 - r.box.x, mz = (r.az + r.bz) / 2 - r.box.z;
@@ -184,7 +184,12 @@ export function buildRails(T, H, rail, metal, steel, angle) {
       // 贴图沿杆子长度方向按米重复（每 0.6 米一段黄漆）
       const cg = new CylinderGeometry(0.022, 0.022, 1, 12), uv = cg.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * r.L / 0.6);
-      rail.addGeo(cg, between(r.ax, r.ay, r.az, r.bx, r.by, r.bz));
+      const bm = between(r.ax, r.ay, r.az, r.bx, r.by, r.bz);
+      rail.addGeo(cg, bm);
+      // 杆子顶上那一条被磨掉了漆，露出亮的钢（磨得最多的地方）：在杆子自己的坐标里找"朝上"是哪个角度
+      _up.set(0, 1, 0).applyQuaternion(_rq.setFromRotationMatrix(bm).invert());
+      const th = Math.atan2(_up.x, _up.z);
+      metal.addGeo(new CylinderGeometry(0.0222, 0.0222, 1, 6, 1, true, th - 0.55, 1.1), bm.clone());
       const posts = [];
       if (r.hand) { if (!r.prev) posts.push([r.ax, r.ay, r.az]); posts.push([r.bx, r.by, r.bz]); }
       else { const n = Math.max(1, Math.round(r.L / 2.2)); for (let i = 0; i <= n; i++) posts.push([r.ax + (r.bx - r.ax) * i / n, r.ay, r.az + (r.bz - r.az) * i / n]); }

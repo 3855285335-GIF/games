@@ -155,6 +155,9 @@ export function grip(i) {
     for (let k = 0; k < 60000; k++) { const lt = R() < 0.5, al = (lt ? 0.07 : 0.16) * (0.4 + R()), o = (Math.floor(R() * H) * W + Math.floor(R() * W)) * 4, v = lt ? 255 : 0;
       d[o] += (v - d[o]) * al; d[o + 1] += (v - d[o + 1]) * al; d[o + 2] += (v - d[o + 2]) * al; }
     x.putImageData(img, 0, 0); }
+  // 板边的砂纸被锉过（贴砂纸时沿板边锉一圈，留下一道发白的细边）
+  for (const ex of [0, W - 3]) { x.fillStyle = 'rgba(235,225,205,0.16)'; x.fillRect(ex, 0, 3, H); }
+  for (let k = 0; k < 600; k++) { const ex = R() < 0.5 ? R() * 3 : W - R() * 3; x.fillStyle = `rgba(240,230,210,${0.06 + R() * 0.14})`; x.fillRect(ex, R() * H, 1, 1 + R() * 3); }
   // 两头被鞋磨过、稍微发白
   for (const end of [0, 1]) { const g = x.createLinearGradient(0, end ? H : 0, 0, end ? H * 0.82 : H * 0.18); g.addColorStop(0, 'rgba(255,255,255,0.06)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, end ? H * 0.82 : 0, W, H * 0.18); }
   const t = new CanvasTexture(c); t.colorSpace = SRGBColorSpace; t.wrapS = t.wrapT = RepeatWrapping; t.anisotropy = 4;
@@ -264,8 +267,9 @@ export const DECKS = [
   { name: '警戒', a: '#151515', b: '#ffd23f', p: 'hazard', wheel: '#151515' },
   { name: '极简', a: '#f2f2f2', b: '#151515', p: 'mono', wheel: '#ff5a4f' },
 ];
-export function deckTexture(i) {
-  const d = DECKS[i % DECKS.length], W = 128, H = 512, [c, x] = cv(W, H), R = rng(i * 17 + 3);
+export function deckTexture(i, worn) {
+  const d = DECKS[i % DECKS.length], W = 128, H = 512, SC = worn ? 2 : 1, [c, x] = cv(W * SC, H * SC), R = rng(i * 17 + 3);
+  x.scale(SC, SC); // 游戏里的板子用两倍分辨率（近看磨损的细节不糊）；下面都按 128×512 的坐标画
   const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, d.a); g.addColorStop(1, d.b);
   x.fillStyle = g; x.fillRect(0, 0, W, H);
   x.fillStyle = d.b; x.strokeStyle = d.b;
@@ -280,6 +284,30 @@ export function deckTexture(i) {
   // 游戏标志：一个圆 + 两个手指点
   x.fillStyle = 'rgba(255,255,255,0.92)'; x.beginPath(); x.arc(W / 2, H * 0.78, 18, 0, 7); x.fill();
   x.fillStyle = '#151515'; x.beginPath(); x.arc(W / 2 - 6, H * 0.78 + 4, 4, 0, 7); x.arc(W / 2 + 6, H * 0.78 - 4, 4, 0, 7); x.fill();
+  if (worn) { // 玩过的板子（游戏里用；改装滑板的预览图还是新的）
+    const Rw = rng(i * 31 + 7), wood = ['#d9bb8c', '#cdaa78', '#e4cca0', '#c39e6c'];
+    // 画布上边 = 板头，下边 = 板尾。两头磨掉漆露出木头：越靠头越多，板尾（起跳时砸地）磨得更狠
+    for (const [end, amt] of [[0, 0.06], [1, 0.1]]) for (let k = 0; k < 600; k++) {
+      const d = Math.pow(Rw(), 2.2) * amt * H, y = end ? H - d : d, xx = Rw() * W;
+      const edge = Math.min(xx, W - xx) / (W / 2), keep = d / (amt * H) + edge * 0.35; // 边上、尖上更容易磨到
+      if (Rw() < keep * 0.9) continue;
+      x.fillStyle = wood[k % 4]; x.globalAlpha = 0.55 + Rw() * 0.45;
+      x.beginPath(); x.ellipse(xx, y, 0.5 + Rw() * 2.2, 0.3 + Rw() * 1.1, (Rw() - 0.5) * 0.8, 0, 7); x.fill();
+    }
+    // 中间（两个支架之间）：滑杆留下的横向划痕
+    x.lineCap = 'round';
+    for (let k = 0; k < 26; k++) {
+      const y = H * (0.3 + Rw() * 0.4), x0 = -4 + Rw() * W * 0.3, x1 = W * (0.7 + Rw() * 0.35), dy = (Rw() - 0.5) * 18;
+      x.strokeStyle = wood[k % 4]; x.globalAlpha = 0.25 + Rw() * 0.45; x.lineWidth = 0.6 + Rw() * 1.4;
+      x.beginPath(); x.moveTo(x0, y); x.lineTo(x1, y + dy); x.stroke();
+    }
+    // 板边磕掉的小口子（靠近两头）
+    for (let k = 0; k < 60; k++) {
+      const y = Rw() < 0.5 ? Math.pow(Rw(), 1.5) * H * 0.2 : H - Math.pow(Rw(), 1.5) * H * 0.22, side = Rw() < 0.5 ? 0 : W;
+      x.fillStyle = wood[k % 4]; x.globalAlpha = 0.9; x.beginPath(); x.ellipse(side, y, 0.8 + Rw() * 1.6, 0.8 + Rw() * 2.2, 0, 0, 7); x.fill();
+    }
+    x.globalAlpha = 1;
+  }
   const t = new CanvasTexture(c); t.colorSpace = SRGBColorSpace;
   return t;
 }
@@ -311,60 +339,104 @@ function fbm(S, periods, amps, R) {
   periods.forEach((p, k) => { const n = vnoise(S, p, R), a = amps[k]; for (let i = 0; i < out.length; i++) out[i] += (n[i] - 0.5) * a; });
   return out;
 }
-// 小图双线性放大到大图（可平铺）
-function upsample(src, s, S) {
-  const out = new Float32Array(S * S), k = s / S;
-  for (let y = 0; y < S; y++) {
-    const fy = y * k, y0 = Math.floor(fy), ty = fy - y0, r0 = (y0 % s) * s, r1 = ((y0 + 1) % s) * s;
-    for (let x = 0; x < S; x++) {
-      const fx = x * k, x0 = Math.floor(fx), tx = fx - x0, c0 = x0 % s, c1 = (x0 + 1) % s;
-      const a = src[r0 + c0], b = src[r0 + c1], c = src[r1 + c0], d = src[r1 + c1];
-      out[y * S + x] = a + (b - a) * tx + (c - a + (a - b - c + d) * tx) * ty;
-    }
-  }
-  return out;
-}
 const DT = (c, srgb) => { const t = new CanvasTexture(c); if (srgb) t.colorSpace = SRGBColorSpace; t.wrapS = t.wrapT = RepeatWrapping; return t; };
 // base：底色（#rrggbb）；smooth：0 = 地面（粗一点），1 = 坡面（抹得光一点）；joints：贴图边上画切缝（每张 = 4 米）
-export function concreteHD(seed, base, smooth, joints, S) {
-  S = S || 2048;
-  const R = rng(seed), s = 256;
-  const lo = upsample(fbm(s, [3, 6, 12, 24, 48], [1, 0.6, 0.35, 0.2, 0.12], R), s, S); // 大片斑驳（几十厘米到几米）
-  const stain = upsample(fbm(s, [4, 8, 16], [1, 0.5, 0.25], R), s, S);              // 水渍 / 脏的地方
-  const mid = vnoise(S, 256, R);                                                    // 几厘米的起伏
-  const r0 = parseInt(base.slice(1, 3), 16), g0 = parseInt(base.slice(3, 5), 16), b0 = parseInt(base.slice(5, 7), 16);
-  const [c, x] = cv(S, S), img = x.createImageData(S, S), d = img.data, H = new Float32Array(S * S);
-  const grain = smooth ? 0.035 : 0.06, rr = Math.random;
-  for (let i = 0; i < S * S; i++) {
-    const w = rr(), sp = w < 0.012 ? -0.18 * (0.5 + rr()) : w > 0.994 ? 0.12 * rr() : 0; // 小石子（深）和亮点
-    let v = 1 + lo[i] * 0.11 + (mid[i] - 0.5) * 0.06 + (rr() - 0.5) * grain + sp;
-    const st = stain[i]; if (st > 0.22) v -= (st - 0.22) * 0.22;                  // 深色的水渍（淡一点，不然像云的影子）
-    d[i * 4] = Math.min(255, r0 * v); d[i * 4 + 1] = Math.min(255, g0 * v); d[i * 4 + 2] = Math.min(255, b0 * (v * 0.98 + 0.02)); d[i * 4 + 3] = 255;
-    H[i] = (mid[i] - 0.5) * 0.6 + (rr() - 0.5) * (smooth ? 0.35 : 0.7) + (sp < 0 ? -1.2 : 0); // 凹凸：细砂 + 小坑
+// 只算像素（不碰网页元素），所以能放到后台线程里算（见 concreteLater）；返回 [颜色 RGBA, 法线 RGBA（一半分辨率）]
+// 大片斑驳、水渍、几厘米的起伏都是从小格子插值出来的：逐个像素现算，不再先放大成整张大图（省时间，也省下 100 多 MB 内存）
+function concretePx(seed, base, smooth, joints, S) {
+  const R = rng(seed), s = 256, P = Math.min(256, S);
+  const LO = fbm(s, [3, 6, 12, 24, 48], [1, 0.6, 0.35, 0.2, 0.12], R); // 大片斑驳（几十厘米到几米）
+  const ST = fbm(s, [4, 8, 16], [1, 0.5, 0.25], R);                     // 水渍 / 脏的地方
+  const G = new Float32Array(P * P); for (let i = 0; i < G.length; i++) G[i] = R(); // 几厘米的起伏（值噪声的格点）
+  // 每一列用到哪几个格子、插值系数多少：每行都一样，先算好
+  const ku = s / S, cm = S / P;
+  const ux0 = new Int32Array(S), ux1 = new Int32Array(S), utx = new Float32Array(S), mx0 = new Int32Array(S), mx1 = new Int32Array(S), mtx = new Float32Array(S);
+  for (let x = 0; x < S; x++) {
+    const fx = x * ku, x0 = Math.floor(fx); ux0[x] = x0 % s; ux1[x] = (x0 + 1) % s; utx[x] = fx - x0;
+    const gx = x / cm, i0 = Math.floor(gx), t = gx - i0; mx0[x] = i0 % P; mx1[x] = (i0 + 1) % P; mtx[x] = t * t * (3 - 2 * t);
   }
-  // 抹刀痕（坡面明显，地面淡一些）：一道道很淡的弧形亮纹
-  const tr = rng(seed + 7);
-  for (let k = 0; k < (smooth ? 40 : 0); k++) { // 地面不画（画出来像一圈圈白线），坡面只画很淡的几道
-    const cx = tr() * S, cy = tr() * S, rad = 60 + tr() * 220, a0 = tr() * 6.28, al = 0.6 + tr() * 1.2, inten = 1.6 * (0.5 + tr());
-    for (let t = 0; t < 1; t += 1 / (rad * al)) {
-      const a = a0 + t * al, px = ((cx + Math.cos(a) * rad) % S + S) % S | 0, py = ((cy + Math.sin(a) * rad) % S + S) % S | 0;
-      for (let w2 = -1; w2 <= 1; w2++) { const o = ((py + w2 + S) % S) * S + px; d[o * 4] = Math.min(255, d[o * 4] + inten); d[o * 4 + 1] = Math.min(255, d[o * 4 + 1] + inten); d[o * 4 + 2] = Math.min(255, d[o * 4 + 2] + inten); }
+  const r0 = parseInt(base.slice(1, 3), 16), g0 = parseInt(base.slice(3, 5), 16), b0 = parseInt(base.slice(5, 7), 16);
+  const N = S / 2, d = new Uint8ClampedArray(S * S * 4), H = new Float32Array(N * N); // 凹凸只在偶数像素上用到（法线贴图是一半分辨率）
+  const grain = smooth ? 0.035 : 0.06, hg = smooth ? 0.35 : 0.7, U = 2.3283064365386963e-10;
+  let z = (Math.random() * 4294967296) >>> 0 || 1; // 简单快速的随机数（xorshift）
+  for (let y = 0; y < S; y++) {
+    const fy = y * ku, y0 = Math.floor(fy), ty = fy - y0, a0 = (y0 % s) * s, a1 = ((y0 + 1) % s) * s;
+    const gy = y / cm, j0 = Math.floor(gy), t0 = gy - j0, my = t0 * t0 * (3 - 2 * t0), m0r = (j0 % P) * P, m1r = ((j0 + 1) % P) * P;
+    const even = (y & 1) === 0, hrow = (y >> 1) * N;
+    for (let x = 0; x < S; x++) {
+      const c0 = ux0[x], c1 = ux1[x], tx = utx[x];
+      let A = LO[a0 + c0], B = LO[a0 + c1], C = LO[a1 + c0], D = LO[a1 + c1];
+      const lo = A + (B - A) * tx + (C - A + (A - B - C + D) * tx) * ty;
+      A = ST[a0 + c0]; B = ST[a0 + c1]; C = ST[a1 + c0]; D = ST[a1 + c1];
+      const st = A + (B - A) * tx + (C - A + (A - B - C + D) * tx) * ty;
+      const e0 = mx0[x], e1 = mx1[x], mt = mtx[x];
+      A = G[m0r + e0]; B = G[m0r + e1]; C = G[m1r + e0]; D = G[m1r + e1];
+      const mid = A + (B - A) * mt + (C - A + (A - B - C + D) * mt) * my;
+      z ^= z << 13; z ^= z >>> 17; z ^= z << 5; const w = (z >>> 0) * U;
+      let sp = 0; // 小石子（深）和亮点
+      if (w < 0.012 || w > 0.994) { z ^= z << 13; z ^= z >>> 17; z ^= z << 5; const q = (z >>> 0) * U; sp = w < 0.012 ? -0.18 * (0.5 + q) : 0.12 * q; }
+      z ^= z << 13; z ^= z >>> 17; z ^= z << 5;
+      let v = 1 + lo * 0.11 + (mid - 0.5) * 0.06 + ((z >>> 0) * U - 0.5) * grain + sp;
+      if (st > 0.22) v -= (st - 0.22) * 0.22; // 深色的水渍（淡一点，不然像云的影子）
+      const o = (y * S + x) * 4; d[o] = r0 * v; d[o + 1] = g0 * v; d[o + 2] = b0 * (v * 0.98 + 0.02); d[o + 3] = 255;
+      if (even && (x & 1) === 0) { z ^= z << 13; z ^= z >>> 17; z ^= z << 5; H[hrow + (x >> 1)] = (mid - 0.5) * 0.6 + ((z >>> 0) * U - 0.5) * hg + (sp < 0 ? -1.2 : 0); } // 凹凸：细砂 + 小坑
     }
   }
-  if (joints) { // 切缝：4 米一道，深色的槽
-    for (let y = 0; y < S; y++) for (const xx of [0, 1, 2, S - 1]) { const o = y * S + xx; d[o * 4] *= 0.45; d[o * 4 + 1] *= 0.45; d[o * 4 + 2] *= 0.45; H[o] -= 3; }
-    for (const yy of [0, 1, 2, S - 1]) for (let xx = 0; xx < S; xx++) { const o = yy * S + xx; d[o * 4] *= 0.45; d[o * 4 + 1] *= 0.45; d[o * 4 + 2] *= 0.45; H[o] -= 3; }
+  // 抹刀痕（只有坡面画，很淡的几道弧形亮纹；地面画出来像一圈圈白线）
+  const tr = rng(seed + 7), sc = S / 1024;
+  for (let k = 0; k < (smooth ? 40 : 0); k++) {
+    const cx = tr() * S, cy = tr() * S, rad = (60 + tr() * 220) * sc, a0 = tr() * 6.28, al = 0.6 + tr() * 1.2, inten = 1.6 * (0.5 + tr());
+    for (let t = 0; t < 1; t += 1 / (rad * al)) {
+      const a = a0 + t * al, px = ((cx + Math.cos(a) * rad) % S + S) % S | 0, py = ((cy + Math.sin(a) * rad) % S + S) % S | 0;
+      for (let w2 = -1; w2 <= 1; w2++) { const o = ((py + w2 + S) % S) * S + px; d[o * 4] += inten; d[o * 4 + 1] += inten; d[o * 4 + 2] += inten; }
+    }
   }
-  x.putImageData(img, 0, 0);
-  // 法线贴图（只要一半分辨率就够）
-  const N = S / 2, [cn, xn] = cv(N, N), ni = xn.createImageData(N, N), nd = ni.data, k = smooth ? 0.9 : 1.6;
-  const h = (xx, yy) => H[((yy * 2 + S) % S) * S + ((xx * 2 + S) % S)];
-  for (let y = 0; y < N; y++) for (let x2 = 0; x2 < N; x2++) {
-    const dx = (h(x2 + 1, y) - h(x2 - 1, y)) * k, dy = (h(x2, y + 1) - h(x2, y - 1)) * k, l = Math.hypot(dx, dy, 8);
-    const o = (y * N + x2) * 4; nd[o] = 128 - (dx / l) * 127; nd[o + 1] = 128 + (dy / l) * 127; nd[o + 2] = 128 + (8 / l) * 127; nd[o + 3] = 255;
+  if (joints) { // 切缝：4 米一道，深色的槽（凹凸也跟着凹下去）
+    for (let y = 0; y < S; y++) for (const xx of [0, 1, 2, S - 1]) { const o = y * S + xx; d[o * 4] *= 0.45; d[o * 4 + 1] *= 0.45; d[o * 4 + 2] *= 0.45; if (!(y & 1) && !(xx & 1)) H[(y >> 1) * N + (xx >> 1)] -= 3; }
+    for (const yy of [0, 1, 2, S - 1]) for (let xx = 0; xx < S; xx++) { const o = yy * S + xx; d[o * 4] *= 0.45; d[o * 4 + 1] *= 0.45; d[o * 4 + 2] *= 0.45; if (!(yy & 1) && !(xx & 1)) H[(yy >> 1) * N + (xx >> 1)] -= 3; }
   }
-  xn.putImageData(ni, 0, 0);
-  return { map: DT(c, true), normalMap: DT(cn, false) };
+  // 法线贴图（一半分辨率）
+  const nd = new Uint8ClampedArray(N * N * 4), k = smooth ? 0.9 : 1.6;
+  for (let y = 0; y < N; y++) {
+    const ru = ((y + N - 1) % N) * N, rd = ((y + 1) % N) * N, rc = y * N;
+    for (let x2 = 0; x2 < N; x2++) {
+      const xl = (x2 + N - 1) % N, xr = (x2 + 1) % N;
+      const dx = (H[rc + xr] - H[rc + xl]) * k, dy = (H[rd + x2] - H[ru + x2]) * k, l = Math.sqrt(dx * dx + dy * dy + 64);
+      const o = (rc + x2) * 4; nd[o] = 128 - (dx / l) * 127; nd[o + 1] = 128 + (dy / l) * 127; nd[o + 2] = 128 + (8 / l) * 127; nd[o + 3] = 255;
+    }
+  }
+  return [d, nd];
+}
+// 纯色的小贴图（高清水泥算好之前先顶上）：颜色贴图 + 平的法线贴图
+export function flatTex(base) {
+  const a = cv(4, 4), b = cv(4, 4); a[1].fillStyle = base; a[1].fillRect(0, 0, 4, 4); b[1].fillStyle = 'rgb(128,128,255)'; b[1].fillRect(0, 0, 4, 4);
+  return { map: DT(a[0], true), normalMap: DT(b[0], false) };
+}
+function pxCanvas(px, S) { const [c, x] = cv(S, S); x.putImageData(new ImageData(px, S, S), 0, 0); return c; }
+function concreteTex(px, S) { return { map: DT(pxCanvas(px[0], S), true), normalMap: DT(pxCanvas(px[1], S / 2), false) }; }
+export function concreteHD(seed, base, smooth, joints, S) { S = S || 2048; return concreteTex(concretePx(seed, base, smooth, joints, S), S); }
+// 高清水泥放到后台线程里算（2048 的地面贴图在手机上要算半秒多，放在前台会让打开游戏慢、卡住画面）：
+// 算好一张就交给 done(序号, 贴图)；后台线程开不起来（老浏览器）就等第一帧画出来以后在前台一张张算
+export function concreteLater(jobs, done) {
+  const fallback = (from) => { let i = from; const next = () => { if (i >= jobs.length) return; const j = jobs[i]; done(i, concreteHD(...j)); i++; setTimeout(next, 30); }; setTimeout(next, 120); };
+  let w = null, url = null;
+  try {
+    const src = [rng, vnoise, fbm, concretePx].map(String).join('\n') +
+      '\nonmessage=function(e){var r=' + concretePx.name + '.apply(null,e.data.a);postMessage({i:e.data.i,d:r[0],n:r[1]},[r[0].buffer,r[1].buffer])};';
+    url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    w = new Worker(url);
+  } catch (e) { w = null; }
+  if (!w) { fallback(0); return; }
+  let got = 0, dead = false;
+  const finish = () => { try { w.terminate(); URL.revokeObjectURL(url); } catch (e) { /* 不要紧 */ } };
+  w.onmessage = (e) => {
+    if (dead) return;
+    const { i, d, n } = e.data, S = jobs[i][4];
+    try { done(i, concreteTex([d, n], S)); } catch (er) { console.error(er); }
+    if (++got >= jobs.length) finish();
+  };
+  w.onerror = (e) => { if (dead) return; dead = true; if (e && e.preventDefault) e.preventDefault(); finish(); fallback(got); }; // 后台线程出错：剩下的在前台算
+  jobs.forEach((a, i) => w.postMessage({ i, a }));
 }
 // 砂纸的凹凸（颗粒在灯下一闪一闪）
 export function gripNormal() {

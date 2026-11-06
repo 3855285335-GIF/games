@@ -11,8 +11,9 @@ const STEP_TOL = 0.035;          // 能直接滚上去的小坎
 // 力度决定结果：划得越快跳得越高；拨得越重，板子转得越多、也转得越快，然后自己慢慢停下（不会一直转很多圈）
 const POP_MIN = 2.4, POP_RNG = 1.2;            // 起跳速度 2.4～3.6 m/s（空中重力 5.5：高度约 0.5～1.2 米，滞空约 0.9～1.3 秒）
 const popV = (k) => POP_MIN + POP_RNG * clamp(k || 0, 0, 1);
-const FLIP_MIN = 0.45, FLIP_PER_K = 1.6;      // 翻板转几圈 = 0.45 + 1.6 × 力度：力度 0.34 正好一圈，力度 1 大约两圈；轻一点就差一点
-const SHOVE_MIN = 0.45, SHOVE_PER_K = 1.6;    // 转板转几个半圈，同上：力度 0.34 正好半圈（Shove-it），力度 1 大约一整圈（360 Shove-it）
+// 2026-11-06 用户说转的幅度少了：手机上随手一拨的力度大多在 0.1～0.45，以前只转 0.6～1.2 圈，经常不够一圈 → 整体加大
+const FLIP_MIN = 0.72, FLIP_PER_K = 1.4;      // 翻板转几圈 = 0.72 + 1.4 × 力度：力度 0.2 正好一圈，0.55 一圈半，0.9 两圈；轻一点就差一点
+const SHOVE_MIN = 0.72, SHOVE_PER_K = 1.4;    // 转板转几个半圈，同上：力度 0.2 正好半圈（Shove-it），0.9 一整圈（360 Shove-it）
 const MAX_TURNS = 3;                          // 连着拨几次，最多也就转 3 圈
 const SPIN_TAU = 0.2;                         // 拨完板子先转得快、再慢慢停：0.2 秒转完 63%，0.6 秒转完 95%
 const SNAP_TOL = 0.45, SNAP_TOL_S = 0.4;      // 接板时离"正"还差 26°（转板 23°）以内，脚会把板子踩正；差得更多就停在那个歪的角度
@@ -133,9 +134,14 @@ export class Skater {
     return s;
   }
   // 落地时板子还侧着一点（剩下的翻板角）：以低的那边轮子为支点，板子整体要抬高一点，轮子才不会陷进地里
+  // 还有一种：原地转身 / Manual 把一头翘起来，同时另一头的轮子被坡顶起来，两个翘法的支点不在同一头，板子也要抬高一点
   groundLift() {
-    if (this.mode !== 'ground' || !this.flipA) return 0;
-    const f = this.flipA; return Math.max(0, 0.1 * Math.abs(Math.sin(f)) - CY * (1 - Math.cos(f)));
+    if (this.mode !== 'ground') return 0;
+    let L = 0;
+    const f = this.flipA; if (f) L = Math.max(0, 0.1 * Math.abs(Math.sin(f)) - CY * (1 - Math.cos(f)));
+    const g = this.gTilt;
+    if (g) { let o = this.manPitch + this.popPitch + this.kickPitch; if (this.fakie) o = -o; if (o * g < 0) L += 2 * TRUCK_Z * Math.sin(Math.min(Math.abs(o), Math.abs(g))); }
+    return L;
   }
   // 画面用的翘板角度（按板子自身方向；Fakie 时方向相反）
   visPitch() {
@@ -995,6 +1001,9 @@ export class Skater {
     this.mode = 'bail'; this.bailT = 0; this.bailReason = reason;
     this.bq.copy(this.qv);
     if (this.shoveA || this.flipA) {
+      // 翻板是绕板子中心（离地 CY）转的，并进姿态以后就变成绕板子底下转：位置挪一下，板子留在原处
+      // （不然板子翻到背面朝下时摔倒，会一下子沉下去 12 厘米，戳进脚下的东西里）
+      const f = this.flipA; v1.set(CY * Math.sin(f), CY * (1 - Math.cos(f)), 0).applyQuaternion(this.qv); this.p.add(v1);
       const bk = qt.setFromAxisAngle(Y, this.shoveA), bf = new Quaternion().setFromAxisAngle(Z, this.flipA);
       bk.multiply(bf);
       this.bq.multiply(bk); this.qv.copy(this.bq);

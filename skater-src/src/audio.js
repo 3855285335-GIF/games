@@ -9,8 +9,11 @@ function synth(sr, len, parts) {
     const t0 = Math.floor((p.at || 0) * sr);
     if (p.modes) for (const [f0, dec, amp] of p.modes) {
       const f = f0 * rnd(0.97, 1.03), w = (2 * Math.PI * f) / sr, k = Math.exp(-1 / (dec * sr)), ph = Math.random() * 6.28;
-      let e = amp * (p.gain || 1);
-      for (let i = t0; i < n && e > 1e-5; i++) { out[i] += e * Math.sin(w * (i - t0) + ph); e *= k; }
+      // 衰减的正弦用递推算：y[n] = 2k·cos(w)·y[n-1] − k²·y[n-2]（结果一样，比每个采样都算一次 sin 快好几倍）
+      const e0 = amp * (p.gain || 1), c2 = 2 * k * Math.cos(w), k2 = k * k;
+      let ym = e0 * Math.sin(ph), y = e0 * k * Math.sin(w + ph), e = e0;
+      if (t0 < n) out[t0] += ym;
+      for (let i = t0 + 1; i < n && e > 1e-5; i++) { out[i] += y; const yn = c2 * y - k2 * ym; ym = y; y = yn; e *= k; }
     }
     if (p.noise) {
       // 瞬间噪声：一阶低通 / 高通 + 指数衰减
@@ -34,38 +37,93 @@ function synth(sr, len, parts) {
 const DECK = () => [[rnd(160, 190), 0.05, 0.5], [rnd(380, 430), 0.04, 0.55], [rnd(720, 800), 0.03, 0.4], [rnd(1150, 1300), 0.022, 0.3], [rnd(1900, 2150), 0.016, 0.22], [rnd(2900, 3300), 0.01, 0.14]];
 const TRUCK = () => [[rnd(2500, 2800), 0.035, 0.12], [rnd(3900, 4300), 0.03, 0.1], [rnd(5600, 6100), 0.022, 0.07], [rnd(7600, 8200), 0.015, 0.05]];
 
+// 采样提前算好：打开游戏后趁空闲分几次算（不需要声音设备），点开始时只要把数据装进去，进入游戏更快。
+// 按 48000 采样率算（iPhone 一般就是这个）；声音设备的采样率不一样也没关系，浏览器播放时会自动换算
+const SR = 48000;
+const BANK = {
+  // 起跳：板尾砸地（又硬又脆的"啪"）+ 板子木头的共振 + 很短的板尾擦地
+  pop: () => synth(SR, 0.35, [
+    { noise: { dur: 0.012, hp: 900, amp: 0.9 } },
+    { noise: { dur: 0.05, lp: 5000, hp: 400, amp: 0.35 }, at: 0.002 },
+    { modes: DECK(), gain: 1.1, at: 0.001 },
+    { modes: [[rnd(85, 100), 0.06, 0.6]], at: 0.002 },
+    { modes: TRUCK(), gain: 0.8, at: 0.004 },
+  ]),
+  // 落地：后轮、前轮先后着地（相差十几毫秒）：轮子的闷响 + 支架的金属声 + 板子的共振
+  land: () => { const dt = rnd(0.008, 0.022); return synth(SR, 0.45, [
+    { modes: [[rnd(60, 75), 0.09, 0.9], [rnd(120, 140), 0.05, 0.4]] },
+    { noise: { dur: 0.03, lp: 1800, amp: 0.55 } },
+    { modes: TRUCK(), gain: 1 }, { modes: DECK(), gain: 0.7 },
+    { modes: [[rnd(60, 75), 0.08, 0.7]], at: dt }, { noise: { dur: 0.025, lp: 1800, amp: 0.4 }, at: dt },
+    { modes: TRUCK(), gain: 0.8, at: dt }, { modes: DECK(), gain: 0.5, at: dt },
+  ]); },
+  // 压过地缝：轮子"咔哒"一下（前后轮各一下）
+  clack: () => synth(SR, 0.18, [
+    { modes: [[rnd(70, 90), 0.03, 0.5]] }, { noise: { dur: 0.008, lp: 3000, amp: 0.4 } }, { modes: TRUCK(), gain: 0.35 },
+    { modes: [[rnd(70, 90), 0.03, 0.4]], at: 0.06 }, { noise: { dur: 0.008, lp: 3000, amp: 0.3 }, at: 0.06 },
+  ]),
+  // 拨板：手指擦过砂纸（沙沙一下）
+  flick: () => synth(SR, 0.12, [{ noise: { dur: 0.09, lp: 7000, hp: 1800, amp: 0.45 } }]),
+  // 接板：脚踩回板上：闷的木头声
+  catch: () => synth(SR, 0.15, [{ noise: { dur: 0.015, lp: 1200, amp: 0.5 } }, { modes: DECK().slice(0, 3), gain: 0.6 }, { modes: [[rnd(110, 130), 0.03, 0.4]] }]),
+  // 上杆：金属一声"叮"
+  grindOn: () => synth(SR, 0.4, [{ noise: { dur: 0.01, hp: 1500, amp: 0.5 } }, { modes: [[rnd(1150, 1250), 0.12, 0.25], [rnd(2300, 2400), 0.1, 0.2], [rnd(3650, 3800), 0.07, 0.15], [rnd(5100, 5300), 0.05, 0.1]] }, { modes: TRUCK(), gain: 0.7 }]),
+  // 板子撞到东西：木头 + 一点金属
+  impact: () => synth(SR, 0.3, [{ noise: { dur: 0.02, lp: 2500, amp: 0.7 } }, { modes: DECK(), gain: 0.9 }, { modes: [[rnd(90, 110), 0.05, 0.5]] }, { modes: TRUCK(), gain: 0.4 }]),
+  // 摔：板子翻滚着砸地，几下乱响
+  tumble: () => synth(SR, 0.25, [{ noise: { dur: 0.02, lp: 3000, amp: 0.6 } }, { modes: DECK(), gain: rnd(0.6, 1) }, { modes: TRUCK(), gain: rnd(0.3, 0.8) }]),
+  // Kickturn：前轮砸回地面
+  kick: () => synth(SR, 0.2, [{ modes: [[rnd(70, 85), 0.05, 0.5]] }, { noise: { dur: 0.015, lp: 2000, amp: 0.35 } }, { modes: TRUCK(), gain: 0.5 }]),
+};
+// 持续的声音要用的噪声，和室外的短混响
+const NOISE = {
+  // 粉红噪声（比白噪声更像真实的摩擦声）
+  nb: () => {
+    const d = new Float32Array(SR * 2); let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
+    for (let i = 0; i < d.length; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+      b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+      d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.11;
+    }
+    return [d];
+  },
+  wb: () => { const d = new Float32Array(SR * 2); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return [d]; },
+  ir: () => [0, 1].map(() => { const a = new Float32Array(Math.floor(SR * 0.45)); for (let i = 0; i < a.length; i++) { const t = i / SR; a[i] = (Math.random() * 2 - 1) * Math.exp(-t * 11) * (t < 0.012 ? t / 0.012 : 1); } return a; }),
+};
+const PRE = { smp: {}, noise: {}, todo: [...Object.keys(NOISE).map((k) => ['n', k]), ...Object.keys(BANK).map((k) => ['s', k])], timer: 0 };
+function preStep() { // 算一种声音（4 个版本）
+  const j = PRE.todo.shift(); if (!j) return false;
+  if (j[0] === 'n') PRE.noise[j[1]] = NOISE[j[1]](); else PRE.smp[j[1]] = [0, 1, 2, 3].map(() => BANK[j[1]]());
+  return true;
+}
+
 export const Aud = {
   ctx: null, sfx: true, music: true, _mus: null, smp: {},
+  // 打开游戏后调用：趁空闲一点点把采样算好（每次只算一种，不会卡画面）
+  prep(delay) {
+    if (PRE.timer || !PRE.todo.length) return;
+    const run = () => { PRE.timer = 0; if (this.ctx || !preStep()) return; PRE.timer = setTimeout(run, 40); };
+    PRE.timer = setTimeout(run, delay || 0);
+  },
   init() {
     if (this.ctx) return;
     try {
       const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
-      const c = (this.ctx = new C()), sr = c.sampleRate;
-      // 粉红噪声（比白噪声更像真实的摩擦声）
-      const nb = c.createBuffer(1, sr * 2, sr), d = nb.getChannelData(0);
-      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
-      for (let i = 0; i < d.length; i++) {
-        const w = Math.random() * 2 - 1;
-        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
-        b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
-        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.11;
-      }
-      this.nb = nb;
-      const wb = c.createBuffer(1, sr * 2, sr), wd = wb.getChannelData(0);
-      for (let i = 0; i < wd.length; i++) wd[i] = Math.random() * 2 - 1;
-      this.wb = wb;
+      const c = (this.ctx = new C());
+      clearTimeout(PRE.timer); PRE.timer = 0; while (preStep()); // 还没算完的现在算完
+      const buf = (chs) => { const b = c.createBuffer(chs.length, chs[0].length, SR); chs.forEach((a, i) => b.getChannelData(i).set(a)); return b; };
+      const nb = (this.nb = buf(PRE.noise.nb)), wb = (this.wb = buf(PRE.noise.wb));
       this.out = c.createGain(); this.out.gain.value = 0.9; this.out.connect(c.destination);
       // 室外的短混响（周围的墙和地面反射回来一点点）
-      const ir = c.createBuffer(2, Math.floor(sr * 0.45), sr);
-      for (let ch = 0; ch < 2; ch++) { const a = ir.getChannelData(ch); for (let i = 0; i < a.length; i++) { const t = i / sr; a[i] = (Math.random() * 2 - 1) * Math.exp(-t * 11) * (t < 0.012 ? t / 0.012 : 1); } }
-      this.rev = c.createConvolver(); this.rev.buffer = ir;
+      this.rev = c.createConvolver(); this.rev.buffer = buf(PRE.noise.ir);
       const wet = c.createGain(); wet.gain.value = 0.22; this.rev.connect(wet); wet.connect(this.out);
       this.fx = c.createGain(); this.fx.gain.value = this.sfx ? 1 : 0; this.fx.connect(this.out); this.fx.connect(this.rev);
       this.mg = c.createGain(); this.mg.gain.value = this.music ? 0.22 : 0; this.mg.connect(this.out);
-      this._makeBank(sr);
+      for (const k of Object.keys(PRE.smp)) this.smp[k] = PRE.smp[k].map((a) => buf([a]));
       // 持续的声音：轮子滚（粉红噪声 + 低沉的隆隆声 + 轻微的轴承声）、木头坡的空心声、磨杆、滑板身擦杆、横着蹭地
-      const loop = (buf, chain) => {
-        const s = c.createBufferSource(); s.buffer = buf; s.loop = true; s.loopStart = Math.random(); s.loopEnd = 2;
+      const loop = (b, chain) => {
+        const s = c.createBufferSource(); s.buffer = b; s.loop = true; s.loopStart = Math.random(); s.loopEnd = 2;
         let node = s; const fls = chain.map(([type, f, q]) => { const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; if (q) fl.Q.value = q; node.connect(fl); node = fl; return fl; });
         const g = c.createGain(); g.gain.value = 0; node.connect(g); g.connect(this.fx); s.start(0, Math.random()); return { fl: fls[0], fls, g, s };
       };
@@ -82,44 +140,6 @@ export const Aud = {
       this.bear.connect(this.bearG); this.bearG.connect(this.fx); this.bear.start();
       this._startMusic();
     } catch (e) { this.ctx = null; }
-  },
-  // 预先合成几种声音，每种 4 个版本
-  _makeBank(sr) {
-    const c = this.ctx, mk = (len, parts) => { const a = synth(sr, len, parts), b = c.createBuffer(1, a.length, sr); b.getChannelData(0).set(a); return b; };
-    const B = this.smp, four = (f) => [0, 1, 2, 3].map(f);
-    // 起跳：板尾砸地（又硬又脆的"啪"）+ 板子木头的共振 + 很短的板尾擦地
-    B.pop = four(() => mk(0.35, [
-      { noise: { dur: 0.012, hp: 900, amp: 0.9 } },
-      { noise: { dur: 0.05, lp: 5000, hp: 400, amp: 0.35 }, at: 0.002 },
-      { modes: DECK(), gain: 1.1, at: 0.001 },
-      { modes: [[rnd(85, 100), 0.06, 0.6]], at: 0.002 },
-      { modes: TRUCK(), gain: 0.8, at: 0.004 },
-    ]));
-    // 落地：后轮、前轮先后着地（相差十几毫秒）：轮子的闷响 + 支架的金属声 + 板子的共振
-    B.land = four(() => { const dt = rnd(0.008, 0.022); return mk(0.45, [
-      { modes: [[rnd(60, 75), 0.09, 0.9], [rnd(120, 140), 0.05, 0.4]] },
-      { noise: { dur: 0.03, lp: 1800, amp: 0.55 } },
-      { modes: TRUCK(), gain: 1 }, { modes: DECK(), gain: 0.7 },
-      { modes: [[rnd(60, 75), 0.08, 0.7]], at: dt }, { noise: { dur: 0.025, lp: 1800, amp: 0.4 }, at: dt },
-      { modes: TRUCK(), gain: 0.8, at: dt }, { modes: DECK(), gain: 0.5, at: dt },
-    ]); });
-    // 压过地缝：轮子"咔哒"一下（前后轮各一下）
-    B.clack = four(() => mk(0.18, [
-      { modes: [[rnd(70, 90), 0.03, 0.5]] }, { noise: { dur: 0.008, lp: 3000, amp: 0.4 } }, { modes: TRUCK(), gain: 0.35 },
-      { modes: [[rnd(70, 90), 0.03, 0.4]], at: 0.06 }, { noise: { dur: 0.008, lp: 3000, amp: 0.3 }, at: 0.06 },
-    ]));
-    // 拨板：手指擦过砂纸（沙沙一下）
-    B.flick = four(() => mk(0.12, [{ noise: { dur: 0.09, lp: 7000, hp: 1800, amp: 0.45 } }]));
-    // 接板：脚踩回板上：闷的木头声
-    B.catch = four(() => mk(0.15, [{ noise: { dur: 0.015, lp: 1200, amp: 0.5 } }, { modes: DECK().slice(0, 3), gain: 0.6 }, { modes: [[rnd(110, 130), 0.03, 0.4]] }]));
-    // 上杆：金属一声"叮"
-    B.grindOn = four(() => mk(0.4, [{ noise: { dur: 0.01, hp: 1500, amp: 0.5 } }, { modes: [[rnd(1150, 1250), 0.12, 0.25], [rnd(2300, 2400), 0.1, 0.2], [rnd(3650, 3800), 0.07, 0.15], [rnd(5100, 5300), 0.05, 0.1]] }, { modes: TRUCK(), gain: 0.7 }]));
-    // 板子撞到东西：木头 + 一点金属
-    B.impact = four(() => mk(0.3, [{ noise: { dur: 0.02, lp: 2500, amp: 0.7 } }, { modes: DECK(), gain: 0.9 }, { modes: [[rnd(90, 110), 0.05, 0.5]] }, { modes: TRUCK(), gain: 0.4 }]));
-    // 摔：板子翻滚着砸地，几下乱响
-    B.tumble = four(() => mk(0.25, [{ noise: { dur: 0.02, lp: 3000, amp: 0.6 } }, { modes: DECK(), gain: rnd(0.6, 1) }, { modes: TRUCK(), gain: rnd(0.3, 0.8) }]));
-    // Kickturn：前轮砸回地面
-    B.kick = four(() => mk(0.2, [{ modes: [[rnd(70, 85), 0.05, 0.5]] }, { noise: { dur: 0.015, lp: 2000, amp: 0.35 } }, { modes: TRUCK(), gain: 0.5 }]));
   },
   // 播放一个采样：音量 vol，音高随机浮动
   play(name, vol, rate) {

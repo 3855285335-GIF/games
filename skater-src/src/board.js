@@ -34,14 +34,19 @@ function shared() {
     dark: new MeshStandardMaterial({ color: 0x1d1e21, metalness: 0.3, roughness: 0.55 }),
     steel: new MeshStandardMaterial({ color: 0x45484d, metalness: 0.35, roughness: 0.5 }), // 板面上的螺丝：暗一点（以前反光像白点）
     bush: new MeshStandardMaterial({ color: 0xffa21f, roughness: 0.72 }),
+    chrome: new MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.85, roughness: 0.3 }), // 轴承内圈、垫片、轴头螺母（镀锌的亮银色）
+    printD: new MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.55 }), // 轮子侧面的印花（浅色轮子印深色）
+    printL: new MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.55 }), // 深色轮子印浅色
   };
   return SHARED;
 }
 
+// 板头比板尾长一点、翘得陡一点（大多数真板子是这样；具体数字是估计的）。总长不变，物理用的轮廓不受影响
+const KICK = { nose: [0.272, 0.063], tail: [0.258, 0.055] };
 function deckY(z, x) {
-  const az = Math.abs(z), half = DECK.L / 2;
+  const az = Math.abs(z), half = DECK.L / 2, [kz, rise] = z >= 0 ? KICK.nose : KICK.tail;
   let y = DECK.base;
-  if (az > DECK.kickZ) y += DECK.rise * Math.pow((az - DECK.kickZ) / (half - DECK.kickZ), 1.6);
+  if (az > kz) y += rise * Math.pow((az - kz) / (half - kz), 1.6);
   return y + 0.0075 * Math.pow(x / (DECK.W / 2), 2); // 板面凹弧（两边微微翘起）
 }
 export const deckTop = (z, x) => deckY(z, x || 0) + DECK.thick;
@@ -119,12 +124,33 @@ function wheelPairGeometry() {
   one.dispose();
   return mb.geo();
 }
-// 轴承（深色防尘盖）+ 轴头螺母
+// 轴承（深色防尘盖）
 function bearingGeometry() {
   const mb = new MB();
   for (const sx of [-1, 1]) {
     const b = new CylinderGeometry(0.0112, 0.0112, WW - 0.006, 18); b.rotateZ(Math.PI / 2);
     mb.addGeo(b, M4().makeTranslation(sx * WX, 0, 0));
+  }
+  return mb.geo();
+}
+// 轴承内圈（亮银的小圈，从防尘盖中间露出来）+ 两边的垫片
+function raceGeometry() {
+  const mb = new MB();
+  for (const sx of [-1, 1]) for (const side of [-1, 1]) {
+    const r = new CylinderGeometry(0.0052, 0.0052, 0.0016, 14); r.rotateZ(Math.PI / 2);
+    mb.addGeo(r, M4().makeTranslation(sx * WX + side * (WW / 2 - 0.0028), 0, 0));
+    const wsh = new CylinderGeometry(0.0062, 0.0062, 0.0012, 14); wsh.rotateZ(Math.PI / 2); // 垫片
+    mb.addGeo(wsh, M4().makeTranslation(sx * WX + side * (WW / 2 + 0.0006), 0, 0));
+  }
+  return mb.geo();
+}
+// 轮子外侧面的一圈印花（离轴心 14～19 毫米）
+function printGeometry() {
+  // 轮子侧面是一点点锥形的：印花跟着斜，始终浮在表面外 0.25 毫米
+  const mb = new MB(), pts = [new Vector2(0.0142, 0.00005), new Vector2(0.019, 0.00095)];
+  for (const sx of [-1, 1]) {
+    const ring = new LatheGeometry(pts, 32); ring.rotateZ(sx * Math.PI / 2); // 正面朝外
+    mb.addGeo(ring, M4().makeTranslation(sx * (WX + WW / 2), 0, 0));
   }
   return mb.geo();
 }
@@ -138,16 +164,23 @@ function hangerGeometry() {
   mb.addGeo(bar2, M4().makeTranslation(0.035, AXY + 0.001, 0)); bar.dispose();
   // 中间的三角形本体（往上收窄到转轴）
   const sh = new Shape();
-  sh.moveTo(-0.052, -0.004); sh.lineTo(0.052, -0.004); sh.lineTo(0.016, 0.022); sh.lineTo(-0.016, 0.022); sh.closePath();
-  const body = new ExtrudeGeometry(sh, { depth: 0.016, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 1, steps: 1 });
+  sh.moveTo(-0.052, -0.003); sh.quadraticCurveTo(0, -0.006, 0.052, -0.003); sh.quadraticCurveTo(0.037, 0.013, 0.016, 0.021); sh.quadraticCurveTo(0, 0.025, -0.016, 0.021); sh.quadraticCurveTo(-0.037, 0.013, -0.052, -0.003); // 两侧微微鼓出来（铸件的样子）
+  const body = new ExtrudeGeometry(sh, { depth: 0.016, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.0028, bevelSegments: 3, steps: 1 }); // 铸件的圆角
   body.translate(0, AXY, -0.008);
   mb.addGeo(body, M4());
   // 轴 + 两头螺母 + 垫片
   const ax = new CylinderGeometry(0.0038, 0.0038, 2 * (WX + WW / 2 + 0.006), 8); ax.rotateZ(Math.PI / 2);
   mb.addGeo(ax, M4().makeTranslation(0, AXY, 0));
+  return mb.geo();
+}
+// 轴头螺母（亮银的六角螺母，外侧倒个角）
+function axleNutGeometry() {
+  const mb = new MB();
   for (const sx of [-1, 1]) {
-    const nut = new CylinderGeometry(0.0058, 0.0058, 0.006, 6); nut.rotateZ(Math.PI / 2);
-    mb.addGeo(nut, M4().makeTranslation(sx * (WX + WW / 2 + 0.004), AXY, 0));
+    const nut = new CylinderGeometry(0.0058, 0.0058, 0.0055, 6); nut.rotateZ(Math.PI / 2);
+    mb.addGeo(nut, M4().makeTranslation(sx * (WX + WW / 2 + 0.0042), AXY, 0));
+    const cap = new CylinderGeometry(0.0036, 0.0052, 0.0012, 12); cap.rotateZ(-sx * Math.PI / 2);
+    mb.addGeo(cap, M4().makeTranslation(sx * (WX + WW / 2 + 0.0075), AXY, 0));
   }
   return mb.geo();
 }
@@ -155,22 +188,36 @@ function hangerGeometry() {
 function plateGeometry(tz) {
   const mb = new MB(), inw = -Math.sign(tz);
   const yb = DECK.base;
-  const plate = new BoxGeometry(0.058, 0.006, 0.084); mb.addGeo(plate, M4().makeTranslation(0, yb - 0.003, tz));
+  // 底座：圆角的铸造板（以前是直角的方块）
+  const ps = new Shape(), pw = 0.029, pd = 0.042, pr = 0.008;
+  ps.moveTo(-pw + pr, -pd); ps.lineTo(pw - pr, -pd); ps.quadraticCurveTo(pw, -pd, pw, -pd + pr); ps.lineTo(pw, pd - pr); ps.quadraticCurveTo(pw, pd, pw - pr, pd);
+  ps.lineTo(-pw + pr, pd); ps.quadraticCurveTo(-pw, pd, -pw, pd - pr); ps.lineTo(-pw, -pd + pr); ps.quadraticCurveTo(-pw, -pd, -pw + pr, -pd);
+  const plate = new ExtrudeGeometry(ps, { depth: 0.004, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 4 });
+  plate.rotateX(Math.PI / 2); mb.addGeo(plate, M4().makeTranslation(0, yb - 0.001, tz));
   // 转轴座（朝外）
   const cup = new BoxGeometry(0.03, 0.016, 0.022); mb.addGeo(cup, M4().makeTranslation(0, yb - 0.012, tz - inw * 0.024));
   const arm = new CylinderGeometry(0.0055, 0.007, 0.03, 10); mb.addGeo(arm, new Matrix4().makeRotationX(inw * 0.95).setPosition(0, yb - 0.019, tz - inw * 0.012));
   // 大螺丝（往里斜）
   const kp = new CylinderGeometry(0.0042, 0.0042, 0.04, 8); mb.addGeo(kp, new Matrix4().makeRotationX(-inw * 0.5).setPosition(0, yb - 0.023, tz + inw * 0.012));
-  const kn = new CylinderGeometry(0.0065, 0.0065, 0.006, 6); mb.addGeo(kn, new Matrix4().makeRotationX(-inw * 0.5).setPosition(0, yb - 0.04, tz + inw * 0.021));
+  const kn = new CylinderGeometry(0.0065, 0.0065, 0.006, 6); mb.addGeo(kn, new Matrix4().makeRotationX(-inw * 0.5).setPosition(0, yb - 0.0425, tz + inw * 0.0222));
   // 底座四颗螺母
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const n = new CylinderGeometry(0.0034, 0.0034, 0.004, 6); mb.addGeo(n, M4().makeTranslation(sx * 0.02, yb - 0.008, tz + sz * 0.028)); }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const n = new CylinderGeometry(0.0034, 0.0034, 0.004, 6); mb.addGeo(n, M4().makeTranslation(sx * 0.0205, yb - 0.0075, tz + sz * 0.027)); }
   return mb.geo();
 }
 function bushGeometry(tz) {
   const mb = new MB(), inw = -Math.sign(tz), yb = DECK.base;
   for (const [dy, r] of [[0.015, 0.0115], [0.033, 0.0105]]) {
-    const b = new CylinderGeometry(r, r, 0.009, 14);
+    const b = new CylinderGeometry(r, r * 0.94, 0.009, 16); // 桥胶：圆桶形，一头稍小
     mb.addGeo(b, new Matrix4().makeRotationX(-inw * 0.5).setPosition(0, yb - dy, tz + inw * (0.009 + dy * 0.45)));
+  }
+  return mb.geo();
+}
+// 桥胶上下的碗形垫片（亮银）
+function washerGeometry(tz) {
+  const mb = new MB(), inw = -Math.sign(tz), yb = DECK.base;
+  for (const [dy, r] of [[0.0098, 0.0128], [0.0383, 0.0122]]) {
+    const w = new CylinderGeometry(r, r * 0.86, 0.0014, 16);
+    mb.addGeo(w, new Matrix4().makeRotationX(-inw * 0.5).setPosition(0, yb - dy, tz + inw * (0.009 + dy * 0.45)));
   }
   return mb.geo();
 }
@@ -178,16 +225,18 @@ function bushGeometry(tz) {
 function boltGeometry() {
   const mb = new MB();
   for (const tz of [-DECK.truckZ, DECK.truckZ]) for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const x = sx * 0.02, z = tz + sz * 0.028, b = new CylinderGeometry(0.0036, 0.0036, 0.0012, 10);
-    mb.addGeo(b, M4().makeTranslation(x, deckTop(z, x) + 0.0003, z));
+    const x = sx * 0.0205, z = tz + sz * 0.027, pts = [];
+    for (let i = 0; i <= 5; i++) { const a = (i / 5) * (Math.PI / 2); pts.push(new Vector2(Math.sin(a) * 0.0038 + 1e-5, Math.cos(a) * 0.0013)); } // 圆顶的螺丝头（六角孔看不清，不做）
+    const b = new LatheGeometry(pts.reverse(), 12);
+    mb.addGeo(b, M4().makeTranslation(x, deckTop(z, x) - 0.0001, z));
   }
   return mb.geo();
 }
 let G = null;
 function geos() {
   if (G) return G;
-  G = { deck: deckGeometry(), wheels: wheelPairGeometry(), bearings: bearingGeometry(), hanger: hangerGeometry(), bolts: boltGeometry(), plates: {}, bush: {} };
-  for (const tz of [-DECK.truckZ, DECK.truckZ]) { G.plates[tz] = plateGeometry(tz); G.bush[tz] = bushGeometry(tz); }
+  G = { deck: deckGeometry(), wheels: wheelPairGeometry(), bearings: bearingGeometry(), races: raceGeometry(), print: printGeometry(), hanger: hangerGeometry(), nuts: axleNutGeometry(), bolts: boltGeometry(), plates: {}, bush: {}, washers: {} };
+  for (const tz of [-DECK.truckZ, DECK.truckZ]) { G.plates[tz] = plateGeometry(tz); G.bush[tz] = bushGeometry(tz); G.washers[tz] = washerGeometry(tz); }
   return G;
 }
 
@@ -196,7 +245,7 @@ export function makeBoard(cfg, opts) {
   cfg = normBoard(cfg);
   const g = geos(), S = shared();
   const design = cfg.deck;
-  const bottom = new MeshStandardMaterial({ map: deckTexture(design), roughness: 0.55 });
+  const bottom = new MeshStandardMaterial({ map: deckTexture(design, true), roughness: 0.55 }); // 板底：玩过的样子（板头板尾磨掉漆、中间有滑杆的划痕）
   const wm = wheelMat(cfg.wheel), METAL = truckMat(cfg.truck), GRIP = gripMat(cfg.grip);
   const root = new Group(), pitchG = new Group(), shoveG = new Group(), flipG = new Group(), model = new Group();
   root.add(pitchG); pitchG.add(shoveG); shoveG.add(flipG); flipG.add(model);
@@ -210,11 +259,15 @@ export function makeBoard(cfg, opts) {
   for (const tz of [-DECK.truckZ, DECK.truckZ]) {
     deckIn.add(new Mesh(g.plates[tz], METAL));
     deckIn.add(new Mesh(g.bush[tz], S.bush));
+    deckIn.add(new Mesh(g.washers[tz], S.chrome));
     const tg = new Group(); tg.position.z = tz; model.add(tg);
     tg.add(new Mesh(g.hanger, METAL));
+    tg.add(new Mesh(g.nuts, S.chrome));
     const spin = new Group(); spin.position.y = AXY; tg.add(spin);
     const wh = new Mesh(g.wheels, wm); spin.add(wh);
     const br = new Mesh(g.bearings, S.dark); spin.add(br);
+    spin.add(new Mesh(g.races, S.chrome));
+    spin.add(new Mesh(g.print, WHEELS[cfg.wheel] === '#151515' || WHEELS[cfg.wheel] === '#7d848e' ? S.printL : S.printD));
     trucks.push({ g: tg, spin });
   }
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = !opts.noRecv; } });
