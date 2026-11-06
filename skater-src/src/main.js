@@ -145,6 +145,7 @@ const combo = new Combo({
 const sk = new Skater(T, {
   onPop: () => { Aud.pop(); feelHit(0.28, 0.1, 0); },
   onFlick: () => Aud.flick(),
+  onCatch: () => Aud.catch(),
   onLand: (info) => {
     Aud.land(info.impact, info.quality); fx.land(sk.p, info.impact);
     feelHit(0.2 + 0.075 * info.impact, -(0.22 + 0.085 * info.impact), Math.max(0, info.impact - 4.5) * 0.004 + (info.quality === 'sketchy' ? 0.004 : 0));
@@ -158,7 +159,10 @@ const sk = new Skater(T, {
   },
   onBail: (why) => {
     Aud.bail(); fx.bail(sk.p); feelHit(0, -0.3, 0.012);
-    const msg = { catch: '没接住板！<small>落地前把手指放回板上（黄圈提示）</small>', flip: '板子没翻完！', shove: '板子没转完！', angle: '落地太歪了！', hard: '摔太狠了！', wall: '撞墙了！' }[why] || '摔了！';
+    const msg = { catch: '没接住板！<small>拨完以后，落地前把手指重新放回板上（黄圈提示）</small>',
+      flipShort: '板子没翻够！<small>拨快一点，或者晚一点接板</small>', flipOver: '板子翻过头了！<small>拨轻一点，或者早一点接板</small>',
+      shoveShort: '板子没转够！<small>侧划快一点，或者晚一点接板</small>', shoveOver: '板子转过头了！<small>侧划轻一点，或者早一点接板</small>',
+      angle: '落地太歪了！', hard: '摔太狠了！', wall: '撞墙了！' }[why] || '摔了！';
     toast(msg, '#ff6b5f', 1500);
     combo.lose();
     sk8.attempt(null, true);
@@ -595,7 +599,7 @@ function frame(now) {
       I = input.update(dt, sk.mode !== 'air');
       for (const e of input.drain()) {
         if (e.type === 'pop') sk.pop(e.kind, e.k);
-        else if (e.type === 'flick') sk.flick(e.which, e.dir);
+        else if (e.type === 'flick') sk.flick(e.which, e.dir, e.k, e.t);
         else if (e.type === 'powerslide') { if (!sk.powerslide(e.dir)) { sk.flick('front', e.dir); sk.flick('back', e.dir); } }
         else if (e.type === 'reset') { combo.lose(); sk.respawn(); camInit = false; }
       }
@@ -605,6 +609,7 @@ function frame(now) {
       const I2 = Object.assign({}, I);
       while (acc >= STEP && n < 24) { sk.step(STEP, I2); I2.push = 0; I2.twist = 0; I2.kick = 0; combo.tick(STEP, sk); acc -= STEP; n++; }
       if (sk.shoveBaked) { renderQ.multiply(tmpQ.setFromAxisAngle(UP, sk.shoveBaked)); sk.shoveBaked = 0; } // 转板落地：画面朝向一起转，不闪
+      if (sk.baked) { renderQ.multiply(sk.bakeQ); sk.bakeQ.identity(); sk.baked = false; } // 摔倒时板子翻到一半：画面朝向一起转
       if (n >= 24) acc = 0;
       if (sk.mode === 'ground' && sk.s * 3.6 >= 20) completeChal('speed');
       if (sk.mode === 'grind' && sk.grind && sk.grind.r.handSlope) completeChal('hand');
@@ -652,9 +657,10 @@ function frame(now) {
     geo = state === 'play' ? boardGeo() : null;
     showRailTarget(state === 'play' && sk.mode !== 'grind' && sk.mode !== 'bail' ? sk.railTarget() : null, now / 1000, I);
     let ring = null;
-    if (state === 'play' && geo && sk.mode === 'air' && sk.v.y < 0 && I && I.fingers === 0 && !settings.easy && (sk.air.popped || sk.air.t > 0.3)) {
-      const hb = sk.p.y - T.height(sk.p.x, sk.p.z);
-      if (hb < 1.1) ring = [geo.cx, geo.cy, Math.hypot(geo.fx - geo.rx, geo.fy - geo.ry) / 2 + 26, clamp(1 - hb / 1.1, 0, 1)];
+    if (state === 'play' && geo && sk.mode === 'air' && I && !settings.easy && sk.needsCatch(I)) {
+      const R = Math.hypot(geo.fx - geo.rx, geo.fy - geo.ry) / 2 + 26;
+      if (sk.air.flicked) { const h = sk.catchHint(); if (h > 0) ring = [geo.cx, geo.cy, R, h]; } // 拨过板：板子转到能接正的角度时亮
+      else if (sk.v.y < 0) { const hb = sk.p.y - T.height(sk.p.x, sk.p.z); if (hb < 1.1) ring = [geo.cx, geo.cy, R, clamp(1 - hb / 1.1, 0, 1)]; }
     }
     const showSpots = state === 'play' && geo && settings.dots && I && I.touching === 0 && sk.mode === 'ground' && mode !== 'practice' && !store.get('pracDone', false) && chalDone.size < 2;
     show('spots', !!showSpots);

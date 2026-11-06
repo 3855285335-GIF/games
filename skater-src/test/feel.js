@@ -35,7 +35,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(long >= short * 1.5 && long >= 1.8 && m2.on.includes('on'), `2b 一直划出板头：${long} m/s，划到板头外时手指 ${m2.on}`);
 
   // 3 转向：两指往右偏到板边外面 → 转到底、不会断开
-  await place(-20, -34, Math.PI / 2, 3);
+  await place(-20, -30, Math.PI / 2, 3); // 平地（原来放在台阶上，转弯时会掉下台阶、而且板边卡在上一级台阶里）
   g = await G(); let A = at(g, -0.4, 0), B = at(g, 0.4, 0); await send('touchStart', [[A[0], A[1], 1], [B[0], B[1], 2]]); await sleep(120);
   const hd0 = (await st()).hd;
   { const fr = []; for (let i = 1; i <= 10; i++) { const k = 1.8 * i / 10; const a = at(g, -0.4, k), b2 = at(g, 0.4, k); fr.push([[a[0], a[1], 1], [b2[0], b2[1], 2]]); } await burst(fr, 16); }

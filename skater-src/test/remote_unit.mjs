@@ -117,4 +117,35 @@ for (const hint of [true, false]) {
   ok(maxV < V * (hint ? 1.05 : 1.2), `起步后不会突然加速 / 瞬移${tag}：最大显示速度 ${maxV.toFixed(2)} m/s（实际 ${V}）`);
   ok(maxJerk < 0.6, `匀速滑行时显示速度平稳${tag}：相邻帧速度变化最大 ${maxJerk.toFixed(2)} m/s`);
 }
+// 7) 翻板落地后板子还差一点点没正（f 只剩 -0.05，新版物理）：接着原来的圈数转完，不倒转
+{
+  const R = new Remote('x');
+  feed(R, [
+    { t: 1000, p: [0, 0.4, 0], q: yawQ(0), m: 1, w: [3, 1, 0], f: -3.0, ft: -6.28 },
+    { t: 1250, p: [0.75, 0.5, 0], q: yawQ(0), m: 1, w: [3, -1, 0], f: -5.9, ft: -6.28 },
+    { t: 1400, p: [1.2, 0, 0], q: yawQ(0), m: 0, w: [3, -3, 0], f: -0.05, ft: 0 },
+    { t: 1650, p: [1.95, 0, 0], q: yawQ(0), m: 0, w: [3, 0, 0], f: 0 },
+  ]);
+  const o = mk(); let prev = null, rev = 0, mx = 0;
+  for (let rt = 1000; rt <= 1395; rt += 16) { at(R, rt, o); if (prev !== null) { if (o.f > prev + 1e-6) rev++; mx = Math.max(mx, Math.abs(o.f - prev)); } prev = o.f; }
+  at(R, 1640, o);
+  ok(rev === 0 && mx < 0.5 && Math.abs(o.f) < 0.06, `翻板落地剩一点角度：倒转帧 ${rev}，每帧最多转 ${(mx * 57.3).toFixed(0)}°，落地后 f=${o.f.toFixed(2)}`);
+}
+
+// 8) 摔倒：对方把翻板角并进了姿态（q 多转了 β，f 归零）。画面上的板子不能突然多转一圈
+for (const beta of [2.0, 4.0, -5.0]) {
+  const R = new Remote('x'), Z = new Vector3(0, 0, 1), Y = new Vector3(0, 1, 0);
+  const qz = (a) => { const q = new Quaternion().setFromAxisAngle(Z, a); return [q.x, q.y, q.z, q.w]; };
+  feed(R, [
+    { t: 1000, p: [0, 0.5, 0], q: qz(0), m: 1, w: [2, 0, 0], f: beta * 0.8, ft: beta * 0.8 },
+    { t: 1100, p: [0.2, 0.4, 0], q: qz(0), m: 1, w: [2, -1, 0], f: beta, ft: beta },
+    { t: 1200, p: [0.4, 0.2, 0], q: qz(beta), m: 3, w: [2, -1, 0], f: 0 },
+    { t: 1300, p: [0.6, 0.1, 0], q: qz(beta), m: 3, w: [1, 0, 0], f: 0 },
+  ]);
+  const o = mk(), tot = (o) => o.q.clone().multiply(new Quaternion().setFromAxisAngle(Y, o.h)).multiply(new Quaternion().setFromAxisAngle(Z, o.f));
+  let prev = null, mx = 0;
+  for (let rt = 1100; rt <= 1300; rt += 8) { at(R, rt, o); const q = tot(o); if (prev) mx = Math.max(mx, 2 * Math.acos(Math.min(1, Math.abs(q.dot(prev))))); prev = q; }
+  ok(mx < 0.2, `摔倒并进翻板角 ${(beta * 57.3).toFixed(0)}°：每帧最多转 ${(mx * 57.3).toFixed(1)}°`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS'); process.exit(fails ? 1 : 0);

@@ -47,7 +47,7 @@ export class Input {
   _contact(p, t) {
     if (p.ghost) return;
     if (p.cap) { if (!this.onBoard(p.x, p.y, true)) p.cap = false; }
-    else if (this.onBoard(p.x, p.y, this.inAir)) { p.cap = true; p.sx = p.x; p.sy = p.y; p.stillT = t; p.lp = false; }
+    else if (this.onBoard(p.x, p.y, this.inAir)) { p.cap = true; p.capT = t; p.sx = p.x; p.sy = p.y; p.stillT = t; p.lp = false; }
     p.on = p.cap;
     if (p.on) p.lastOnT = t;
   }
@@ -58,7 +58,8 @@ export class Input {
     const t = this.ts(e), x = e.clientX, y = e.clientY;
     const ghost = !this.onBoard(x, y, this.inAir);
     // sx/sy/stillT：按下后没怎么动的起点和时间（判断长按用）；lp = 这次按下有没有一直不动
-    const p = { id: e.pointerId, x, y, x0: x, y0: y, px: x, py: y, t0: t, hist: [[t, x, y]], armed: true, flicked: false, flickT: 0, role: null, ghost, cap: !ghost, on: !ghost, lastOnT: ghost ? -9 : t, vt: t, sx: x, sy: y, stillT: t, lp: true };
+    // capT = 这根手指这一次踩上板的时刻（拨板之后重新踩上板 = 接住板）
+    const p = { id: e.pointerId, x, y, x0: x, y0: y, px: x, py: y, t0: t, hist: [[t, x, y]], armed: true, flicked: false, flickT: 0, role: null, ghost, cap: !ghost, capT: ghost ? -9 : t, on: !ghost, lastOnT: ghost ? -9 : t, vt: t, sx: x, sy: y, stillT: t, lp: true };
     this.ptrs.set(e.pointerId, p);
     if (!ghost) this.trails.push(p.trail = { pts: [[x, y, t]], kind: null, end: 0 });
     this._roles(); this.anchor = null;
@@ -124,12 +125,14 @@ export class Input {
     const back = -(vx * ux + vy * uy), side = vx * -uy + vy * ux;
     // 起跳：朝板尾方向（±55°）或者朝屏幕下方（±40°）快速划
     const cb = back / sp, cd = vy / sp;
+    // 力度 k：刚过门槛 = 0，门槛的 3.3 倍以上 = 1（越快跳得越高 / 转得越快）
+    const k = clamp((sp / TH - 1) / 2.3, 0, 1);
     if (cb > 0.57 || (cd > 0.77 && cb > 0.2)) {
       if (this.inAir) return; // 空中往后划没有意义
-      this.events.push({ type: 'pop', kind: p.role === 'front' ? 'nose' : 'tail', k: clamp((sp - TH) / (1500 * S), 0, 1) });
+      this.events.push({ type: 'pop', kind: p.role === 'front' ? 'nose' : 'tail', k });
       if (p.trail) p.trail.kind = 'pop';
     } else if (Math.abs(side) / sp > 0.64) {
-      const ev = { type: 'flick', which: p.role === 'front' ? 'front' : 'back', dir: side > 0 ? 1 : -1, id: p.id, t };
+      const ev = { type: 'flick', which: p.role === 'front' ? 'front' : 'back', dir: side > 0 ? 1 : -1, id: p.id, t, k };
       if (this.inAir) this.events.push(ev); else this.pend.push(ev);
       p.flickT = t;
       if (p.trail) p.trail.kind = ev.which === 'front' ? 'flip' : 'shove';
@@ -254,13 +257,15 @@ export class Input {
     if (K.KeyM) manual = 0.6; if (K.KeyB) manual = -0.6;
     if (K.KeyG) hold = true; // 键盘：按住 G = 长按磨杆
     const spinRate = (K.KeyQ ? 6.5 : 0) - (K.KeyE ? 6.5 : 0);
-    const caught = act.length > 0 || real.some((p) => tn - p.lastOnT < 0.2) || tn - this.kbT < 4 || !!(this.opts.easy && this.opts.easy());
+    const auto = tn - this.kbT < 4 || !!(this.opts.easy && this.opts.easy()); // 键盘 / 简单模式：自动接板
+    const caught = act.length > 0 || real.some((p) => tn - p.lastOnT < 0.2) || auto;
+    let capT = -9; for (const p of act) if (p.capT > capT) capT = p.capT;
     const fb = act.length === 1 ? (act[0].role === 'back' ? 1 : -1) : 0;
     // 清理旧光迹
     this.trails = this.trails.filter((tr) => !tr.end || tn - tr.end < 0.4);
     // 键盘：Z / C = Kickturn 左 / 右
     if (K.KeyZ) kick += 4 * dt; if (K.KeyC) kick -= 4 * dt;
-    return { lean: clamp(lean, -1.25, 1.25), push, brake, manual: clamp(manual, -1.4, 1.4), twist, spinRate, fingers: act.length, touching: real.length, caught, fb, pump, hold, kick: clamp(kick, -0.5, 0.5) };
+    return { lean: clamp(lean, -1.25, 1.25), push, brake, manual: clamp(manual, -1.4, 1.4), twist, spinRate, fingers: act.length, touching: real.length, caught, capT, auto, fb, pump, hold, kick: clamp(kick, -0.5, 0.5) };
   }
   drain() { const e = this.events; this.events = []; return e; }
 }

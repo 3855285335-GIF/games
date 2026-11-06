@@ -65,6 +65,7 @@ export const Aud = {
   clack(sp) { const k = Math.min(1, 0.3 + sp * 0.12); this.burst(2400, 0.025, 0.22 * k, 'bandpass', 2.5); this.tone(95, 55, 0.05, 0.22 * k); },
   kick() { this.burst(900, 0.08, 0.25, 'bandpass', 2); this.tone(160, 80, 0.07, 0.25); },
   flick() { this.burst(1600, 0.16, 0.12, 'bandpass', 1.5); },
+  catch() { this.burst(1300, 0.03, 0.2, 'bandpass', 2); this.tone(140, 85, 0.05, 0.22); }, // 手指接住板：脚踩回板上的一声
   grindOn() { this.burst(3200, 0.12, 0.4, 'bandpass', 4); this.tone(900, 700, 0.1, 0.12, 'triangle'); },
   skid() { this.burst(1100, 0.55, 0.45, 'bandpass', 1.2); this.burst(500, 0.4, 0.3, 'bandpass', 1); },
   impact(v) { this.burst(420, 0.2, Math.min(0.9, 0.2 + v * 0.1)); this.burst(2200, 0.07, 0.25, 'bandpass', 3); },

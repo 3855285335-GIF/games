@@ -25,12 +25,19 @@
 
 - 打包：`cd skater-src && ./build.sh`，生成 `out/skate.html`，发布时复制成仓库根目录的 `skater.html`。
 - 需要：Node、esbuild 0.28.2、three.js r187（`npm install three@0.187.0`）、Playwright（Chromium）。
-- 测试：在 `skater-src` 里运行 `node test/名字.js`。全套是 wire、netcn、rate、sk8end、net3、phys、phys_roof、phys_yard、carve、kickturn、feel、twist2、touch3、ui3、fuzz2、qtip、turnbtn，外加 `test/remote_unit.mjs`（要先用 esbuild 打包再运行）。test 里其他脚本是调试、截图用的。
+- 测试：在 `skater-src` 里运行 `node test/名字.js`。全套是 wire、netcn、rate、sk8end、net3、phys、phys_roof、phys_yard、carve、kickturn、feel、twist2、touch3、ui3、fuzz2、qtip、turnbtn、flip2（翻板力度、接板时机、防穿模）、catch_touch（真实触摸接板），外加 `test/remote_unit.mjs`（要先用 esbuild 打包再运行）。test 里其他脚本是调试、截图用的。
+
+## 操控和物理（2026-11-06 第 1 步重做后）
+
+- 起跳、翻板、转板都按手指划的速度算力度（`src/input.js` 里的 k，0～1）：划得越快跳得越高、转得越快。
+- 拨板后板子自己一直转，手指重新按回板上才算接住；接住时离"正"差得不多会被带正，差太多就停在歪的角度，落地摔。招式名字按板子实际转了几圈算。
+- 手感参数都在 `src/physics.js` 开头（POP_、FLIP_W、SHOVE_W、CATCH_、LAND_TOL），调手感改这里。
+- 防穿模：板子轮廓点（HULL）每一步都和地面、道具检查，撞墙推开、摔倒时也不会穿进东西里。`flip2` 的随机部分用固定随机数，`SEED=数字` 换一组，`DBG=1` 会打印穿模最深那一刻之前的过程和状态。
 
 ## 联机现状（2026-11-05 核实）
 
 - Supabase 项目 games（ref bjpagltblvejqrvefdur，区域法兰克福），所有游戏共用，各游戏的表和函数用自己的前缀（滑板是 skate_）。
-- 国内不开 VPN 时，Supabase 的实时通道（WebSocket）连不上，游戏会自动改用数据库牵线（`sql/games-cn.sql`）加 WebRTC 直连；直连也不通时走数据库转发。
+- 国内不开 VPN 时，Supabase 的实时通道（WebSocket）连不上，游戏会自动改用数据库牵线（`sql/games-cn.sql`）加 WebRTC 直连；直连也不通时走数据库转发（花 Supabase 免费版每月 5GB 的流出流量，所有游戏共用，2026-11-06 查过官网计费说明）。
 - 中转服务器：
   - ExpressTURN 是主力。官网写免费每月 1000GB，免费版只开 3478 端口。真机实测：国内不开 VPN 时 UDP 不通、TCP 通；开 VPN 都通。
   - Metered 是备用。官网写的是"Free: 500 MB trial"，每月 500MB，和 Chatter 共用。只留 TLS 443：如果留着它的 UDP，浏览器会优先选 UDP 中转，在国内就会花掉 Metered 的 500MB，而不是 ExpressTURN 的额度。

@@ -4,9 +4,9 @@ const STEPS = [
   { t: '两指往板头方向推', s: '推出板头手指就离开板子了，抬起来放回板尾，再推。推到 11 km/h。', demo: 'push' },
   { t: '压板转弯', s: '手指往板子右半边压，板面往右倾，就往右拐；压左边往左拐。滑得越快弯越大，停着压板不会转。转一大圈。', demo: 'steer' },
   { t: '原地转 Kickturn', s: '慢下来或停住，一根手指按住板尾不动，另一根手指往旁边拨，板子就跟着手指原地转。转 90° 以上。', demo: 'kick' },
-  { t: '起跳 Ollie', s: '后指快速往下划出板尾。落地前把手指放回板上接住板。', demo: 'ollie' },
-  { t: '翻板 Kickflip / Heelflip', s: '起跳后，前指从板子侧边快速划出去，再放回板上接住。', demo: 'flip' },
-  { t: '转板 Shove-it', s: '起跳后，后指侧着划出去，板子会在脚下转半圈。', demo: 'shove' },
+  { t: '起跳 Ollie', s: '后指快速往下划出板尾：划得越快跳得越高。落地前把手指放回板上接住板。', demo: 'ollie' },
+  { t: '翻板 Kickflip / Heelflip', s: '起跳后，前指从板子侧边拨出去：拨得越快转得越快。板子快转完一圈、黄圈亮起来时，把手指按回板上接住。按早了没转够，按晚了转过头。', demo: 'flip' },
+  { t: '转板 Shove-it', s: '起跳后，后指侧着拨出去，板子在脚下平着转。快转完半圈、黄圈亮起来时，把手指按回板上接住。', demo: 'shove' },
   { t: 'Manual 翘板滑', s: '只用一根手指按住板尾。越靠板尾翘得越高，让右边的指针停在绿色区，坚持 1.5 秒。', demo: 'manual' },
   { t: '磨杆', s: '前面的杆子亮起来时，两根手指同时按住不动，板子会自己跳上去磨；松开就跳下来。也可以自己起跳落到杆上。', demo: 'grind' },
 ];
@@ -73,9 +73,9 @@ export class Practice {
     if (d === 'place') { oa = ob = 0.5 + 0.5 * Math.sin(t * 6.283); }
     else if (d === 'push') { const k = e(Math.min(1, t * 1.6)); A = at(-0.55 + k * 1.3, 0); B = at(0.55 + k * 1.3, 0); oa = ob = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3; }
     else if (d === 'steer') { const k = 0.75 * Math.max(-1, Math.min(1, Math.sin(t * 6.283) * 1.6)); A = at(-0.5, k); B = at(0.5, k); }
-    else if (d === 'ollie') { const k = t < 0.35 ? 0 : e(Math.min(1, (t - 0.35) / 0.15)); A = at(-0.6 - k * 0.9, 0); oa = t < 0.75 ? 1 : 0; }
-    else if (d === 'flip') { const k1 = t < 0.25 ? 0 : e(Math.min(1, (t - 0.25) / 0.12)); const k2 = t < 0.42 ? 0 : e(Math.min(1, (t - 0.42) / 0.14)); A = at(-0.6 - k1 * 0.9, 0); B = at(0.55, -k2 * 2.2); oa = t < 0.4 ? 1 : 0; ob = t < 0.75 ? 1 : 0; }
-    else if (d === 'shove') { const k1 = t < 0.25 ? 0 : e(Math.min(1, (t - 0.25) / 0.12)); const k2 = t < 0.42 ? 0 : e(Math.min(1, (t - 0.42) / 0.14)); A = at(-0.6 - k1 * 0.4, k2 * 2.2); oa = t < 0.75 ? 1 : 0; ob = t < 0.25 ? 1 : 0; }
+    else if (d === 'ollie') { const k = t < 0.35 ? 0 : e(Math.min(1, (t - 0.35) / 0.15)); A = t < 0.8 ? at(-0.6 - k * 0.9, 0) : at(-0.45, 0); oa = t < 0.58 ? 1 : t < 0.8 ? 0 : 1; }
+    else if (d === 'flip') { const k1 = t < 0.25 ? 0 : e(Math.min(1, (t - 0.25) / 0.12)); const k2 = t < 0.42 ? 0 : e(Math.min(1, (t - 0.42) / 0.14)); A = at(-0.6 - k1 * 0.9, 0); B = t < 0.8 ? at(0.55, -k2 * 2.2) : at(0.3, 0); oa = t < 0.4 ? 1 : 0; ob = t < 0.6 ? 1 : t < 0.8 ? 0 : 1; }
+    else if (d === 'shove') { const k1 = t < 0.25 ? 0 : e(Math.min(1, (t - 0.25) / 0.12)); const k2 = t < 0.42 ? 0 : e(Math.min(1, (t - 0.42) / 0.14)); A = t < 0.8 ? at(-0.6 - k1 * 0.4, k2 * 2.2) : at(-0.4, 0); oa = t < 0.6 ? 1 : t < 0.8 ? 0 : 1; ob = t < 0.25 ? 1 : 0; }
     else if (d === 'manual') { A = at(-0.82, 0); ob = 0; oa = 1; }
     else if (d === 'kick') { const k = Math.sin(t * 6.283); A = at(-0.6, 0); const a2 = k * 0.6; B = at(-0.6 + 1.15 * Math.cos(a2), 1.15 * Math.sin(a2) * 2.2); }
     const da = $('demoA'), db = $('demoB');

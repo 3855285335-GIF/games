@@ -134,8 +134,13 @@ export class Remote {
       qa.set(a.q[0], a.q[1], a.q[2], a.q[3]).normalize(); qb.set(b.q[0], b.q[1], b.q[2], b.q[3]).normalize();
       let bf = b.f, bh = b.h;
       // 落地那一下：对方的翻板 / 转板角度归零了（转板角度并进了朝向），这里接着原来的方向转完，不会倒着转回去
-      if (a.m === 1 && b.m !== 1) {
-        if (b.f === 0 && a.f !== 0) bf = a.ft || Math.sign(a.f) * TAU * Math.ceil(Math.abs(a.f) / TAU - 1e-3);
+      if (a.m === 1 && b.m === 3) {
+        // 摔了：对方把翻板 / 转板角度并进了姿态（q）。姿态按最短的路转过去，这里补上整圈，板子不会在一瞬间多转一圈
+        if (a.f !== 0) bf = b.f + Math.round(a.f / TAU) * TAU;
+        if (a.h !== 0) bh = b.h + Math.round(a.h / TAU) * TAU;
+      } else if (a.m === 1 && b.m !== 1) {
+        // 落地 / 上杆：翻板角只剩一点点（或归零），接着原来的圈数算，不会倒着转回去
+        if (a.f !== 0) bf = b.f + (a.ft ? Math.round(a.ft / TAU) : Math.round((a.f - b.f) / TAU)) * TAU;
         if (b.h === 0 && a.h !== 0) {
           bh = a.ht || Math.sign(a.h) * Math.PI * Math.ceil(Math.abs(a.h) / Math.PI - 1e-3);
           qb.multiply(qt.setFromAxisAngle(UPV, -bh)); // 把落地后的朝向换算回“还没并进转板角度”的样子
