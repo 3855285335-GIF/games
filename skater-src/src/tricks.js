@@ -10,7 +10,7 @@ export function flipName(flips, shoves) {
     return { name: ns * 180 + ' Shove-it', pts: 110 * ns };
   }
   const kick = k < 0, bs = sh < 0;
-  const pre = nk === 2 ? 'Double ' : nk >= 3 ? 'Triple ' : '';
+  const pre = nk === 2 ? 'Double ' : nk === 3 ? 'Triple ' : nk === 4 ? 'Quad ' : nk >= 5 ? nk + 'x ' : ''; // 圈数没有上限
   let n;
   if (ns === 0) n = kick ? 'Kickflip' : 'Heelflip';
   else if (ns === 1) n = kick ? (bs ? 'Varial Kickflip' : 'Hardflip') : (bs ? 'Inward Heelflip' : 'Varial Heelflip');
@@ -103,18 +103,19 @@ export class Combo {
 
 // 挑战（完成后保存在本机）
 export const CHALLENGES = [
-  // 力度：划得轻 / 重、拨得轻 / 重，结果不一样（第 4 步加了带 ★ 的这些）
+  // 力度：划得轻 / 重、拨得轻 / 重，结果不一样（带 ★ 的是第 4 步以后加的）
   { id: 'speed', t: '推板加速到 20 km/h' },
   { id: 'ollie', t: '完成一个 Ollie' },
   { id: 'ollieLow', t: '★ 轻轻一划：小 Ollie（不到 0.6 米高）' },
   { id: 'high', t: 'Ollie 高度超过 0.7 米' },
   { id: 'high1', t: '★ 用力一划：Ollie 超过 1 米高' },
   { id: 'kick', t: '完成 Kickflip' },
-  { id: 'kickClean', t: '★ Kickflip 落地不晃（接正、顺着方向落）' },
+  { id: 'perfect', t: '★ 踩点：板子刚转完的那一刻接住' },
   { id: 'heel', t: '完成 Heelflip' },
   { id: 'shove', t: '完成 Pop Shove-it' },
   { id: 'shove360', t: '★ 用力侧拨：360 Shove-it' },
-  { id: 'double', t: '★ 用力拨：Double Kickflip（转两圈）' },
+  { id: 'double', t: '★ 用力拨：Double Kickflip（翻两圈）' },
+  { id: 'triple', t: '★ 跳高再狠狠一拨：Triple Kickflip（翻三圈）' },
   { id: 'varial', t: '完成 Varial Kickflip' },
   { id: 'tre', t: '完成 360 Flip' },
   { id: 'nollie', t: '完成任意 Nollie 招式' },

@@ -5,7 +5,7 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const p=await ctx.newPage();const errs=[];L.errs(p,errs);
   await p.addInitScript(()=>{localStorage.setItem('fs_pracDone','true');localStorage.setItem('fs_settings',JSON.stringify({q:0,easy:false,music:false,sfx:false,dots:true,flick:3,steer:3,time:'day'}));});
   await p.goto(L.URL);await p.waitForTimeout(1500);
-  await p.evaluate(()=>{window.__noRender=true;__dbg.startGame('free');window.__ev=[];const sk=__dbg.sk;for(const k of Object.keys(sk.cb)){const o=sk.cb[k];sk.cb[k]=(...a)=>{window.__ev.push(k+(k==='onBail'?':'+a[0]:''));return o(...a);};}});
+  await p.evaluate(()=>{window.__noRender=true;__dbg.startGame('free');window.__ev=[];window.__nm=[];const c=__dbg.combo,oa=c.add.bind(c),os=c.startLive.bind(c);c.add=(n,pt)=>{window.__nm.push(n);return oa(n,pt);};c.startLive=(n,r,k)=>{window.__nm.push(n);return os(n,r,k);};const sk=__dbg.sk;for(const k of Object.keys(sk.cb)){const o=sk.cb[k];sk.cb[k]=(...a)=>{window.__ev.push(k+(k==='onBail'?':'+a[0]:''));return o(...a);};}});
   await sleep(500);
   const cdp=await ctx.newCDPSession(p);
   const send=(type,pts)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:pts.map(([x,y,id])=>({x,y,id,radiusX:10,radiusY:10,force:1}))});
@@ -13,9 +13,9 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const G=async()=>p.evaluate(()=>__dbg.geo);
   // 板子坐标 → 屏幕坐标
   const at=(g,al,ac)=>{const ux=g.fx-g.rx,uy=g.fy-g.ry,L=Math.hypot(ux,uy),nx=ux/L,ny=uy/L;return [g.cx+nx*al*L/2+(-ny)*ac*g.halfW, g.cy+ny*al*L/2+nx*ac*g.halfW];};
-  const st=()=>p.evaluate(()=>{const s=__dbg.sk;return {mode:s.mode,spd:+s.speed().toFixed(2),hd:+s.heading.toFixed(2),lean:+s.lean.toFixed(2),man:!!s.manual,spin:+s.spin.toFixed(2),flipT:+s.flipT.toFixed(2),slide:!!s.slide,combo:__dbg.combo.list.map(e=>e.name).join('+'),ev:window.__ev.splice(0).join(','),ptrs:[...__dbg.input.ptrs.values()].map(q=>(q.ghost?'G':q.on?'on':'off')+':'+q.role).join(' ')};});
-  const log=(n,o)=>console.log(n.padEnd(15),JSON.stringify(o));
-  const reset=async(spd)=>{await p.evaluate((v)=>{const sk=__dbg.sk;__dbg.combo.clear();sk.reset(2.6, -9.6, 0);sk.s=v;__dbg.renderQ.copy(sk.qv);window.__ev=[];},spd);await sleep(450);};
+  const st=()=>p.evaluate(()=>{const s=__dbg.sk;return {mode:s.mode,spd:+s.speed().toFixed(2),hd:+s.heading.toFixed(2),lean:+s.lean.toFixed(2),man:!!s.manual,spin:+s.spin.toFixed(2),flipT:+s.flipT.toFixed(2),slide:!!s.slide,combo:window.__nm.splice(0).join('+'),ev:window.__ev.splice(0).join(','),ptrs:[...__dbg.input.ptrs.values()].map(q=>(q.ghost?'G':q.on?'on':'off')+':'+q.role).join(' ')};});
+  const R={};const log=(n,o)=>{R[n]=o;console.log(n.padEnd(15),JSON.stringify(o));};
+  const reset=async(spd)=>{await p.evaluate((v)=>{const sk=__dbg.sk;__dbg.combo.clear();sk.reset(2.6, -9.6, 0);sk.s=v;__dbg.renderQ.copy(sk.qv);window.__ev=[];window.__nm=[];},spd);await sleep(450);};
   let g=await G();console.log('geo',JSON.stringify(Object.fromEntries(Object.entries(g).map(([k,v])=>[k,Math.round(v)]))));
   // 1 板外的手指：应该是灰色、推不动
   await send('touchStart',[[60,220,9]]);await sleep(30);await burst([[[60,180,9]],[[60,140,9]],[[60,100,9]]],30);
@@ -41,11 +41,21 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     const fr=[];for(let i=1;i<=5;i++){const a=at(g,-0.55-i*0.34,0);fr.push([[a[0],a[1],1],[B[0],B[1],2]]);}await burst(fr,8);await sleep(120);log('ollie',await st());await send('touchEnd',[]);
     await sleep(300);g=await G();const C=at(g,-0.3,0),D=at(g,0.4,0);await send('touchStart',[[C[0],C[1],3],[D[0],D[1],4]]);await sleep(900);log('ollie landed',await st());await send('touchEnd',[]);}
   await reset(4);
-  // 6 Kickflip：后指下划 + 前指侧划出板边，再放回接板
+  // 6 Kickflip（先划再松）：前指先侧拨出板边，后指再往板尾划、松手；板子转完再放回接板
   g=await G();{const A=at(g,-0.55,0),B=at(g,0.5,0);await send('touchStart',[[A[0],A[1],1],[B[0],B[1],2]]);await sleep(60);
-    const fr=[];for(let i=1;i<=5;i++){const a=at(g,-0.55-i*0.34,0);fr.push([[a[0],a[1],1],[B[0],B[1],2]]);}await burst(fr,8);await sleep(40);
-    const A2=at(g,-1.65,0);const fr2=[];for(let i=1;i<=5;i++){const b2=at(g,0.5,-i*0.6);fr2.push([[A2[0],A2[1],1],[b2[0],b2[1],2]]);}await burst(fr2,8);await sleep(60);
-    log('kickflip air',await st());await send('touchEnd',[]);await sleep(250);g=await G();const C=at(g,-0.3,0);await send('touchStart',[[C[0],C[1],3]]);await sleep(900);log('kickflip land',await st());await send('touchEnd',[]);}
+    const fr2=[];for(let i=1;i<=5;i++){const b2=at(g,0.5,-i*0.3);fr2.push([[A[0],A[1],1],[b2[0],b2[1],2]]);}await burst(fr2,8);await sleep(60);const Bo=at(g,0.5,-1.5);
+    const fr=[];for(let i=1;i<=5;i++){const a=at(g,-0.55-i*0.34,0);fr.push([[a[0],a[1],1],[Bo[0],Bo[1],2]]);}await burst(fr,8);await sleep(40);
+    log('kickflip air',await st());await send('touchEnd',[]);await sleep(800);g=await G();const C=at(g,-0.3,0);await send('touchStart',[[C[0],C[1],3]]);await sleep(900);log('kickflip land',await st());await send('touchEnd',[]);}
+  await reset(4);
+  // 6b Pop Shove-it：后指侧着划出板边、松手 = 起跳 + 转半圈
+  g=await G();{const A=at(g,-0.55,0),B=at(g,0.5,0);await send('touchStart',[[A[0],A[1],1],[B[0],B[1],2]]);await sleep(60);
+    const fr=[];for(let i=1;i<=5;i++){const a=at(g,-0.55,i*0.35);fr.push([[a[0],a[1],1],[B[0],B[1],2]]);}await burst(fr,8);await send('touchEnd',[]);await sleep(150);
+    log('shove air',await st());await sleep(650);g=await G();const C=at(g,-0.3,0);await send('touchStart',[[C[0],C[1],3]]);await sleep(900);log('shove land',await st());await send('touchEnd',[]);}
+  await reset(4);
+  // 6c 前指侧拨以后直接抬起后指（不划）：也起跳 + 翻板
+  g=await G();{const A=at(g,-0.55,0),B=at(g,0.5,0);await send('touchStart',[[A[0],A[1],1],[B[0],B[1],2]]);await sleep(60);
+    const fr2=[];for(let i=1;i<=5;i++){const b2=at(g,0.5,-i*0.3);fr2.push([[A[0],A[1],1],[b2[0],b2[1],2]]);}await burst(fr2,8);await send('touchEnd',[]);await sleep(150);
+    log('lift air',await st());await sleep(650);g=await G();const C=at(g,-0.3,0);await send('touchStart',[[C[0],C[1],3]]);await sleep(900);log('lift land',await st());await send('touchEnd',[]);}
   await reset(4);
   // 7 起跳后不放回：应该没接住
   g=await G();{const A=at(g,-0.55,0),B=at(g,0.5,0);await send('touchStart',[[A[0],A[1],1],[B[0],B[1],2]]);await sleep(60);
@@ -57,5 +67,9 @@ const L=require('./lib');const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   // 9 Powerslide：两指一起往右横甩
   g=await G();{const A=at(g,-0.4,0),B=at(g,0.4,0);await send('touchStart',[[A[0],A[1],1],[B[0],B[1],2]]);await sleep(60);
     const fr=[];for(let i=1;i<=5;i++){const a=at(g,-0.4,i*0.7),b2=at(g,0.4,i*0.7);fr.push([[a[0],a[1],1],[b2[0],b2[1],2]]);}await burst(fr,8);await sleep(200);log('powerslide',await st());await send('touchEnd',[]);await sleep(900);log('after slide',await st());}
-  console.log('errors:',errs.length?errs:'none');await b.close();
+  // 先划再松的几种手势必须都能做出来（2026-11-07 第 5 版的核心）
+  const need=[['ollie landed',/^Ollie$/],['kickflip land',/Kickflip/],['shove land',/Shove-it/],['lift land',/Kickflip/],['after slide',/Powerslide/]];let bad=0;
+  for(const [k,re] of need){const o=R[k]||{};const g=re.test(o.combo||'')&&!/onBail/.test(o.ev||'');console.log((g?'PASS ':'FAIL ')+k+'：'+(o.combo||'无')+' '+(o.ev||''));if(!g)bad++;}
+  if(!/onBail:catch/.test((R['no catch']||{}).ev||'')){console.log('FAIL 起跳后不放回应该没接住');bad++;}
+  console.log('errors:',errs.length?errs:'none');console.log(bad||errs.length?'有失败':'全部通过');await b.close();process.exit(bad||errs.length?1:0);
 })();

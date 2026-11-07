@@ -168,18 +168,20 @@ const sk = new Skater(T, {
   onPop: () => { Aud.pop(); feelHit(0.28, 0.1, 0); },
   onFlick: () => Aud.flick(),
   onCatch: () => {
-    Aud.catch();
-    const c = sk.air && sk.air.catchInfo; if (!c) return;
+    const c = sk.air && sk.air.catchInfo;
+    Aud.catch(!!(c && c.kind === 'perfect'));
+    if (!c) return;
     const w = c.which === 'shove' ? '转板' : '翻板';
-    rec.mark(c.kind === 'ok' ? w + '接得正好（差 ' + c.deg + '°，脚把板踩正了）' : w + (c.kind === 'early' ? '接早了 ' : '接晚了 ') + c.deg + '°', c.kind === 'ok' ? '#7dff9b' : '#ffb36b');
+    rec.mark(c.kind === 'perfect' ? '踩点接住！' : c.kind === 'ok' ? w + '接住了' : w + '接太早了：还差 ' + c.deg + '° 就按回去，板子被踩停了', c.kind === 'early' ? '#ffb36b' : '#7dff9b');
   },
   onLand: (info) => {
     Aud.land(info.impact, info.quality); fx.land(sk.p, info.impact);
     feelHit(0.2 + 0.075 * info.impact, -(0.22 + 0.085 * info.impact), Math.max(0, info.impact - 4.5) * 0.004 + (info.quality === 'sketchy' ? 0.004 : 0));
     feel.wobV += (Math.sign(sk.slip) || (info.spin >= 0 ? 1 : -1)) * Math.min(2.4, 0.12 * info.impact + (info.quality === 'sketchy' ? 1.3 : info.quality === 'clean' ? 0 : 0.4));
     const tr = airTrick(info);
-    if (tr) { combo.add(tr.name, tr.pts); fx.trick(tr.name + '  +' + tr.pts, info.quality === 'clean' ? '#7dff9b' : '#fff'); }
-    else if (info.quality === 'sketchy') fx.trick('落地不稳', '#ffb36b');
+    // 只说好的：招式名和分数；踩点多给 25%。不再弹"落地不稳"之类挑错的字
+    if (tr && info.perfect) tr.pts = Math.round(tr.pts * 1.25);
+    if (tr) { combo.add(tr.name, tr.pts); fx.trick(tr.name + (info.perfect ? '  踩点' : '') + '  +' + tr.pts, info.perfect ? '#ffd23f' : info.quality === 'clean' ? '#7dff9b' : '#fff'); }
     checkLandChal(info, tr);
     practice.land(info);
     sk8.attempt(tr ? tr.name : null, false);
@@ -187,10 +189,10 @@ const sk = new Skater(T, {
   onBail: (why) => {
     Aud.bail(); fx.bail(sk.p); feelHit(0, -0.3, 0.012);
     const msg = { catch: '没接住板！<small>拨完以后，落地前把手指重新放回板上（黄圈提示）</small>',
-      flipShort: '板子没翻够！<small>拨快一点，或者晚一点接板</small>', flipOver: '板子翻过头了！<small>拨轻一点，或者早一点接板</small>',
-      shoveShort: '板子没转够！<small>侧划快一点，或者晚一点接板</small>', shoveOver: '板子转过头了！<small>侧划轻一点，或者早一点接板</small>',
+      flipShort: '接太早了！<small>等板子快转完、黄圈亮了再按回去</small>', flipOver: '接晚了一点！<small>板子转完、黄圈亮的时候按回去</small>',
+      shoveShort: '接太早了！<small>等板子快转完、黄圈亮了再按回去</small>', shoveOver: '接晚了一点！<small>板子转完、黄圈亮的时候按回去</small>',
       angle: '落地太歪了！', hard: '摔太狠了！', wall: '撞墙了！' }[why] || '摔了！';
-    toast(msg, '#ff6b5f', 1500);
+    if (practice.on) toast(msg, '#ff6b5f', 1500); // 摔的原因只在练习里说；平时只有摔倒的动作和声音
     combo.lose();
     sk8.attempt(null, true);
     if (mode === 'run' && state === 'play' && !runEnd) runEnd = setTimeout(() => { runEnd = 0; if (mode === 'run' && state === 'play') endGame('run'); }, 1300); // 让玩家看清自己怎么摔的再结算
@@ -233,10 +235,12 @@ function checkLandChal(info, tr) {
   if (info.air.popped && info.height >= 0.7) completeChal('high');
   if (info.air.popped && info.height >= 1.0) completeChal('high1');
   if (/^(Fakie )?Ollie$/.test(n) && info.height < 0.6 && info.quality !== 'sketchy') completeChal('ollieLow');
-  if (/(^|\s)Kickflip/.test(n) && !/Varial|Double|Triple/.test(n)) { completeChal('kick'); if (info.quality === 'clean') completeChal('kickClean'); }
+  if (/(^|\s)Kickflip/.test(n) && !/Varial|Double|Triple|Quad|\dx /.test(n)) completeChal('kick');
+  if (info.perfect) completeChal('perfect');
   if (/Double Kickflip/.test(n)) completeChal('double');
+  if (/Triple Kickflip/.test(n)) completeChal('triple');
   if (/(^|\s)360 Shove-it/.test(n)) completeChal('shove360');
-  if (/(^|\s)Heelflip/.test(n) && !/Varial|Inward|Double|Triple/.test(n)) completeChal('heel');
+  if (/(^|\s)Heelflip/.test(n) && !/Varial|Inward|Double|Triple|Quad|\dx /.test(n)) completeChal('heel');
   if (/Pop Shove-it/.test(n)) completeChal('shove');
   if (/Varial Kickflip/.test(n)) completeChal('varial');
   if (/(^|\s)360 Flip/.test(n)) completeChal('tre');

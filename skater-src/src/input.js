@@ -4,13 +4,16 @@
 //  · 压在板子左/右半边 = 转弯；两指旋转也能转
 //  · 两指往板头方向推 = 蹬地；推出板头自然脱板，抬起来再放回去
 //  · 只用一根手指按住板尾 / 板头 = Manual / Nose Manual
-//  · 后指快速往下划出板尾 = 起跳；前指侧着划出板边 = 翻板；后指侧划 = 转板；两指一起横甩 = Powerslide
+//  · 先划再松（2026-11-07 改，像 Touchgrind）：后指往板尾快划一下，松手（或划出板尾）的那一刻才起跳，划得越快跳得越高
+//  · 想翻板：起跳前前指先从板边侧着拨出去（板子先不动），0.5 秒内后指起跳，起跳的同时翻板；拨完直接抬后指（不划）也起跳
+//  · 后指侧着划出去 = 起跳 + 转板（Pop Shove-it）；两指一起横甩 = Powerslide；空中再拨照样能翻（从坡上飞出去时）
 import { clamp } from './util.js';
 
 export class Input {
   constructor(el, opts) {
     this.el = el; this.opts = opts || {};
     this.ptrs = new Map(); this.events = []; this.pend = []; this.trails = [];
+    this.arms = []; this.groundFlickT = -9; this.backLiftT = -9; // arms：划过、等松手才起跳的手指；groundFlickT：上一次在地上侧拨（预备翻板）的时刻
     this.keys = {}; this.kbT = -99; this.geo = null; this.inAir = false; this.enabled = false;
     this.anchor = null;
     const o = { passive: false };
@@ -27,7 +30,9 @@ export class Input {
   get scale() { return Math.max(0.75, Math.min(innerWidth, innerHeight) / 390); }
   now() { return performance.now() / 1000; }
   ts(e) { const now = this.now(), x = e && e.timeStamp; return x > 1 && Math.abs(x / 1000 - now) < 1 ? x / 1000 : now; }
-  clear() { this.ptrs.clear(); this.anchor = null; this.pend = []; this.opts.onDots && this.opts.onDots(this.ptrs); }
+  clear() { this.ptrs.clear(); this.anchor = null; this.pend = []; this.arms = []; this.opts.onDots && this.opts.onDots(this.ptrs); }
+  // 这根手指松开了（抬起来，或者划出了板子能活动的范围）：等着它松手的起跳现在出
+  _release(id) { for (const a of this.arms) if (a.id === id) a.rel = true; }
   // 屏幕坐标 → 板子坐标：along -1 = 板尾（后）+1 = 板头（前）；across ±1 = 板子左右边（+ 为右）
   local(x, y) {
     const g = this.geo; if (!g) return null;
@@ -46,7 +51,7 @@ export class Input {
   // 每帧 / 每次移动更新手指是否还踩着板：踩着的在 zone 里就一直算；出了 zone 就松开，要重新按回板上才算
   _contact(p, t) {
     if (p.ghost) return;
-    if (p.cap) { if (!this.onBoard(p.x, p.y, true)) p.cap = false; }
+    if (p.cap) { if (!this.onBoard(p.x, p.y, true)) { p.cap = false; this._release(p.id); } }
     else if (this.onBoard(p.x, p.y, this.inAir)) { p.cap = true; p.capT = t; p.sx = p.x; p.sy = p.y; p.stillT = t; p.lp = false; }
     p.on = p.cap;
     if (p.on) p.lastOnT = t;
@@ -86,7 +91,12 @@ export class Input {
   _up(e, cancel) {
     const p = this.ptrs.get(e.pointerId);
     if (!p) return;
-    if (!cancel && !p.ghost) { p.x = e.clientX; p.y = e.clientY; p.hist.push([this.ts(e), p.x, p.y]); this._flickCheck(p, this.ts(e)); }
+    if (!cancel && !p.ghost) {
+      p.x = e.clientX; p.y = e.clientY; p.hist.push([this.ts(e), p.x, p.y]); this._flickCheck(p, this.ts(e));
+      // 后指没划、直接抬起来：记下来。前后 0.5 秒里前指侧拨过（预备翻板）就起跳（见 update）
+      if (!p.flicked && p.cap && !this.inAir && p.role === 'back' && this.now() - p.t0 > 0.05) this.backLiftT = this.now();
+      this._release(p.id);
+    }
     if (p.trail) p.trail.end = this.now();
     this.ptrs.delete(e.pointerId);
     this._roles(); this.anchor = null;
@@ -129,11 +139,13 @@ export class Input {
     const k = clamp((sp / TH - 1) / 2.3, 0, 1);
     if (cb > 0.57 || (cd > 0.77 && cb > 0.2)) {
       if (this.inAir) return; // 空中往后划没有意义
-      this.events.push({ type: 'pop', kind: p.role === 'front' ? 'nose' : 'tail', k });
+      // 先记下来，等这根手指松开（抬起或划出板尾）的那一刻才起跳
+      this.arms = this.arms.filter((a) => a.id !== p.id);
+      this.arms.push({ id: p.id, kind: p.role === 'front' ? 'nose' : 'tail', k, t, rel: false });
       if (p.trail) p.trail.kind = 'pop';
     } else if (Math.abs(side) / sp > 0.64) {
       const ev = { type: 'flick', which: p.role === 'front' ? 'front' : 'back', dir: side > 0 ? 1 : -1, id: p.id, t, k };
-      if (this.inAir) this.events.push(ev); else this.pend.push(ev);
+      if (this.inAir) this.events.push(ev); else { this.pend.push(ev); if (ev.which === 'front') this.groundFlickT = t; }
       p.flickT = t;
       if (p.trail) p.trail.kind = ev.which === 'front' ? 'flip' : 'shove';
     } else return;
@@ -154,7 +166,11 @@ export class Input {
       KeyJ: { type: 'flick', which: 'front', dir: -1 }, KeyL: { type: 'flick', which: 'front', dir: 1 },
       KeyK: { type: 'flick', which: 'back', dir: -1 }, KeyI: { type: 'flick', which: 'back', dir: 1 },
       KeyX: { type: 'powerslide', dir: 1 }, KeyR: { type: 'reset' } }[k];
-    if (ev) { const o = Object.assign({}, ev); if (o.type === 'flick' && e.shiftKey) o.k = 0.7; this.events.push(o); } // 按住 Shift = 用力拨（转两圈 / 一整圈）
+    if (ev) {
+      const o = Object.assign({}, ev); if (o.type === 'flick' && e.shiftKey) o.k = 0.7; // 按住 Shift = 用力拨（翻两圈 / 转一整圈）
+      this.events.push(o);
+      if (o.type === 'flick' && !this.inAir) this.events.push({ type: 'pop', kind: 'tail', k: 0.6 }); // 在地上：一个键直接起跳出招
+    }
   }
   // 每帧调用一次
   update(dt, onGround) {
@@ -172,7 +188,28 @@ export class Input {
       }
       this.pend = this.pend.filter(Boolean);
     }
-    this.pend = this.pend.filter((e) => { if (tn - e.t > 0.07 || this.inAir) { this.events.push(e); return false; } return true; });
+    this.pend = this.pend.filter((e) => {
+      if (tn - e.t > 0.07 || this.inAir) {
+        this.events.push(e);
+        if (!this.inAir) {
+          if (e.which === 'back') { // 后指侧划 = 起跳 + 转板：松手那一刻起跳（已经松开了就马上跳）
+            this.arms = this.arms.filter((a) => a.id !== e.id);
+            this.arms.push({ id: e.id, kind: 'tail', k: e.k, t: e.t, rel: !this.ptrs.has(e.id) || !this.ptrs.get(e.id).cap });
+          } // 前指侧拨 = 预备翻板（物理那边记 0.5 秒），等后指起跳
+        }
+        return false;
+      }
+      return true;
+    });
+    // 前指侧拨（预备翻板）以后直接抬起后指、没划：也起跳，高度用偏低的力度。两只手指同时抬起时先处理哪个不一定，所以前后 0.15 秒都算
+    if (this.backLiftT > 0 && this.groundFlickT > 0 && this.groundFlickT - this.backLiftT < 0.15 && this.backLiftT - this.groundFlickT < 0.5 && !this.arms.length && !this.inAir) {
+      this.arms.push({ id: -1, kind: 'tail', k: 0.25, t: tn, rel: true }); this.backLiftT = this.groundFlickT = -9;
+    } else if (tn - this.backLiftT > 0.15) this.backLiftT = -9;
+    // 松开了的起跳现在出（排在这一帧的拨板后面，物理那边先记下拨板，起跳时一起出招）；划了 0.35 秒还没松开 = 不跳
+    this.arms = this.arms.filter((a) => {
+      if (a.rel) { if (!this.inAir) this.events.push({ type: 'pop', kind: a.kind, k: a.k }); return false; }
+      return tn - a.t < 0.35;
+    });
     const act = real.filter((p) => p.on);
     const sens = (this.opts.sens && this.opts.sens().steer) || 1;
     let lean = 0, push = 0, brake = 0, manual = 0, twist = 0, pump = false, kick = 0, kickPivot = -1;

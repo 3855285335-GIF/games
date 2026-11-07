@@ -57,7 +57,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const out = {};
     place(2.6, -9.6, 0, 4); run(2, (t) => { if (at(t, 0)) sk.pop('tail', 0); }); out.ollieLow = done().has('ollieLow');
     place(2.6, -9.6, 0, 4); run(2.4, (t) => { if (at(t, 0)) sk.pop('tail', 1); }); out.high1 = done().has('high1');
-    place(2.6, -9.6, 0, 4); run(2, (t) => { if (at(t, 0)) sk.pop('tail', 0.6); if (at(t, 0.05)) sk.flick('front', -1); }); out.kickClean = done().has('kickClean');
+    // 踩点：板子转完的那一刻手指按回去
+    place(2.6, -9.6, 0, 4); run(2, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.6); if (at(t, 0.05)) sk.flick('front', -1, 0.1, 1.0); const P = sk.air && sk.air.pF; i.capT = P && sk.air.t >= P.t0 + P.D ? 2 : -9; }); out.perfect = done().has('perfect');
+    place(2.6, -9.6, 0, 4); run(2.6, (t) => { if (at(t, 0)) sk.pop('tail', 1); if (at(t, 0.04)) sk.flick('front', -1, 0.85); }); out.triple = done().has('triple');
     place(2.6, -9.6, 0, 4); run(2.2, (t) => { if (at(t, 0)) sk.pop('tail', 0.9); if (at(t, 0.04)) sk.flick('front', -1, 0.7); }); out.double = done().has('double');
     place(2.6, -9.6, 0, 4); run(2.2, (t) => { if (at(t, 0)) sk.pop('tail', 0.9); if (at(t, 0.04)) sk.flick('back', -1, 0.7); }); out.shove360 = done().has('shove360');
     // 长台：从南头起跳上台边，一口气磨到北头
@@ -75,10 +77,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     out.n = __dbg.CHALLENGES.length; out.count = document.getElementById('chCount').textContent;
     return out;
   });
-  for (const k of ['ollieLow', 'high1', 'kickClean', 'double', 'shove360']) ok(ch[k], `3 挑战「${k}」能完成`);
+  for (const k of ['ollieLow', 'high1', 'perfect', 'double', 'triple', 'shove360']) ok(ch[k], `3 挑战「${k}」能完成`);
   ok(ch.ledgeFull, `3 挑战「一口气滑完整根长台」能完成（一次最远磨了 ${ch.ledgeD.toFixed(1)} 米）`);
   ok(ch.manualPad, `3 挑战「Manual 台从头翘到尾」能完成（台面上翘了 ${ch.padD} 米）`);
-  ok(ch.n === 30 && /\/30$/.test(ch.count), `3 挑战一共 ${ch.n} 个，主菜单显示 ${ch.count}`);
+  ok(ch.n === 31 && /\/31$/.test(ch.count), `3 挑战一共 ${ch.n} 个，主菜单显示 ${ch.count}`);
   // 旧版本的挑战记录（已经删掉的名字）不算进完成数
   const cnt = await p.evaluate(() => { const a = JSON.parse(localStorage.getItem('fs_chal') || '[]'); return a.length; });
 
@@ -93,7 +95,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const t = i / 240, inp = I();
       if (i === 0) sk.pop('tail', 0.5);
       if (i === 12) sk.flick('front', -1, 0.3, 1.0);
-      if (t >= 0.3) { inp.fingers = 1; inp.touching = 1; inp.capT = 2; } // 拨完 0.25 秒就按回去：接早了
+      if (t >= 0.3) { inp.fingers = 1; inp.touching = 1; inp.capT = 2; } // 拨完 0.25 秒就按回去：接太早，板子被踩停
       sk.step(1 / 240, inp); if (i % 4 === 0) __dbg.rec.push(1 / 60, sk, sk.qv, 0, 0, 0, 0);
     }
     const ev = __dbg.rec.ev.map((e) => e.text);
@@ -103,8 +105,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     for (let k = 0; k < 80 && el.classList.contains('hide'); k++) await new Promise((r) => setTimeout(r, 50)); // 放到接板那一下时显示
     return { ev, speed, before: et - t0, shown: !el.classList.contains('hide'), text: el.textContent };
   });
-  ok(rp.ev.length === 1 && /翻板接早了 \d+°/.test(rp.ev[0]), `4a 接板记下来了：${rp.ev.join(' | ')}`);
-  ok(rp.speed === 0.5 && rp.before >= 0 && rp.before <= 1.51 && rp.shown && /接早了/.test(rp.text), `4b 打开回放：半速、从接板前 ${rp.before.toFixed(2)} 秒开始放，放到接板时屏幕上显示「${rp.text}」`);
+  ok(rp.ev.length === 1 && /翻板接太早了：还差 \d+°/.test(rp.ev[0]), `4a 接板记下来了：${rp.ev.join(' | ')}`);
+  ok(rp.speed === 0.5 && rp.before >= 0 && rp.before <= 1.51 && rp.shown && /接太早/.test(rp.text), `4b 打开回放：半速、从接板前 ${rp.before.toFixed(2)} 秒开始放，放到接板时屏幕上显示「${rp.text}」`);
   await p.evaluate(() => document.getElementById('rpExit').click());
 
   // 5 练习：12 步，按力度；跳高了会提示轻一点
@@ -117,10 +119,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const I = () => ({ lean: 0, push: 0, brake: 0, manual: 0, twist: 0, spinRate: 0, fingers: 2, touching: 2, caught: true, capT: -9, auto: false, fb: 0, kick: 0 });
     const hop = (k) => { __dbg.combo.clear(); sk.reset(2.6, -9.6, 0); sk.s = 4; for (let i = 0; i < 2.4 * 240; i++) { if (i === 0) sk.pop('tail', k); sk.step(1 / 240, I()); } };
     hop(1); const stay = P.i; hop(0); const after = P.i;
-    return { t0, n, stay, after, t1: document.getElementById('pracT').textContent };
+    // 第 7～10 步：先拨再跳（拨完 0.1 秒内起跳），Kickflip、Pop Shove-it、360 Shove-it、Double Kickflip
+    const trick = (which, k, popK) => { __dbg.combo.clear(); sk.reset(2.6, -9.6, 0); sk.s = 4; for (let i = 0; i < 2.6 * 240; i++) { if (i === 0) sk.flick(which, -1, k); if (i === 20) sk.pop('tail', popK); sk.step(1 / 240, I()); } };
+    while (P.i < 6) P.next();
+    const steps = []; for (const [w, k, pk] of [['front', 0.1, 0.5], ['back', 0.1, 0.5], ['back', 0.6, 0.8], ['front', 0.6, 0.9]]) { const b = P.i; trick(w, k, pk); steps.push(b + '→' + P.i); }
+    return { t0, n, stay, after, t1: document.getElementById('pracT').textContent, steps };
   });
   ok(/12$/.test(pr.n), `5a 练习一共 12 步（${pr.n}）`);
   ok(pr.stay === 4 && pr.after === 5, `5b 「${pr.t0}」：用力跳不算过，轻轻跳才过；下一步是「${pr.t1}」`);
+  ok(pr.steps.join(',') === '6→7,7→8,8→9,9→10', `5c 先拨再跳的四步（Kickflip、Pop Shove-it、360 Shove-it、Double Kickflip）都能过：${pr.steps.join(', ')}`);
 
   console.log('errors:', errs.length ? errs : 'none');
   if (errs.length) fails++;

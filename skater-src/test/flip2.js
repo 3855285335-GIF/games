@@ -1,5 +1,5 @@
-// 力度和接板（第 1 步的核心）+ 防穿模
-//  · 拨得越快板子转得越快；接板时机不同，结果不同（翻够 / 没翻够 / 翻过头 / 没接住 / 两圈）
+// 力度和接板 + 防穿模（2026-11-07 第 5 版：板子转整圈、圈数不限、先拨再跳）
+//  · 拨得越重圈数越多，跳得越高能转得越多；板子每次都停在正的位置；接太早会踩停
 //  · 只有拨板之后重新踩上板的手指才算接住
 //  · 做招、摔倒、贴墙、转身、磨杆时，板子的板头板尾、板边、轮子都不会穿进地面和东西里
 const L = require('./lib');
@@ -55,33 +55,41 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     };
     const at = (t, x) => Math.abs(t - x) < 0.5 / 240;
 
-    // 1 力度：同样起跳，轻拨和猛拨转速不同（不接板，看 0.2 秒时转了多少）
-    const spinAt = (k) => { place(2.6, -9.6, 0, 4); let a = 0; run(0.25, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (at(t, 0.24)) a = sk.flipA; }); return a; };
-    out.soft = spinAt(0.15); out.hard = spinAt(0.85);
+    // 1 力度 → 圈数（不限上限，只受滞空限制）：不接板，看最后停在多少圈。板子每次都停在整圈
+    const restAt = (popK, k, which) => { place(2.6, -9.6, 0, 4); let a = 0, w = 0; run(1.25, (t) => { if (at(t, 0)) sk.pop('tail', popK); if (at(t, 0.03)) sk.flick(which || 'front', -1, k, 1.0); if (sk.mode === 'air') { a = which === 'back' ? sk.shoveA : sk.flipA; w = Math.max(w, Math.abs(which === 'back' ? sk.shoveW : sk.flipW)); } }); return { a, w }; };
+    out.turnsMid = [0, 0.15, 0.3, 0.44, 0.5, 0.65, 0.8, 1].map((k) => restAt(0.5, k).a);
+    out.turnsLo = restAt(0, 1).a; out.turnsHi = restAt(1, 1).a; // 同样猛拨：跳得低转得少、跳得高转得多
+    out.shoveTurns = [0.1, 0.6].map((k) => restAt(0.5, k, 'back').a);
     // 2 起跳力度：划得快跳得高
     const hop = (k) => { place(2.6, -9.6, 0, 4); let my = 0; run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', k); i.fingers = 2; i.caught = true; my = Math.max(my, sk.p.y); }); return my; };
     out.hopLo = hop(0); out.hopHi = hop(1);
-    // 3 接板时机（手指在 tc 秒重新踩上板）
-    const kick = (k, tc, capT) => {
-      place(2.6, -9.6, 0, 4);
-      return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); if (tc != null && t >= tc) { i.fingers = 1; i.touching = 1; i.capT = capT == null ? 2.0 : capT; } });
+    // 2b 先拨再跳：起跳前 0.3 秒拨的板，起跳时一起出招
+    place(2.6, -9.6, 0, 4); out.pre = run(1.6, (t, i) => { if (at(t, 0)) sk.flick('front', -1, 0.1, 1.0); if (at(t, 0.3)) sk.pop('tail', 0.5); if (t > 1.2) { i.fingers = 1; i.capT = 2; } });
+    place(2.6, -9.6, 0, 4); out.preLate = run(2.3, (t, i) => { if (at(t, 0)) sk.flick('front', -1, 0.1, 1.0); if (at(t, 0.7)) sk.pop('tail', 0.5); if (t > 1.5) { i.fingers = 1; i.capT = 2; i.caught = true; } }); // 隔太久（0.7 秒）不算
+    // 3 接板时机（手指在 tc 秒重新踩上板）。起跳 0.5：滞空约 1.09 秒；拨在 0.05 秒，一圈大约 0.75 秒转完（0.8 秒停在正的位置）
+    let ci = null, maxJerk = 0; const jerks = {};
+    const kick = (k, tc, capT, which) => {
+      place(2.6, -9.6, 0, 4); ci = null; let prevA = null, prevD = null, step = 0, jk = 0;
+      const r = run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick(which || 'front', -1, k, 1.0); if (tc != null && t >= tc) { i.fingers = 1; i.touching = 1; i.capT = capT == null ? 2.0 : capT; }
+        // 平滑：接住以后角度每一步的变化量不能突然跳（以前接住是"啪"一下掰正）
+        step++; if (sk.mode === 'air') { const A = which === 'back' ? sk.shoveA : sk.flipA; if (prevA != null) { const d = A - prevA; if (prevD != null && t > 0.07 && sk.air.caught) jk = Math.max(jk, Math.abs(d - prevD)); prevD = d; } prevA = A; } else { prevA = prevD = null; }
+        if (sk.air && sk.air.catchInfo && !ci) ci = sk.air.catchInfo; });
+      r.ci = ci; if (ci && ci.kind !== 'early') { maxJerk = Math.max(maxJerk, jk); jerks[k + '@' + tc] = +jk.toFixed(4); } return r; // 踩停（接太早）本来就是一下停住，不算
     };
-    // 转多少（带矫正）≈ 力度 0 → 0.96 圈，0.08 → 1.01，0.3 → 1.32，0.7 → 2.01；转的过程：0.3 秒转完 63%
-    out.good = kick(0.08, 0.85);   // 力度 0.08 ≈ 正好一圈：转完以后什么时候接都行
-    out.good2 = kick(0.3, 0.5);    // 力度 0.3 = 转 1.32 圈：在转到一圈的那一下接住（拨完 0.35～0.53 秒）
-    out.early = kick(0.08, 0.15);  // 才转了一点就接
-    out.late = kick(0.3, 1.0);     // 拨重了转过头还不接
-    out.light = kick(0, 1.0);      // 最轻的一拨（矫正后也接近一圈）：晚点接也能落
+    out.good = kick(0.08, 0.85);   // 转完以后接（正好踩点）
+    out.near = kick(0.08, 0.45);   // 快转完（还差不到 1/3 圈）就接：脚把板带正
+    out.early = kick(0.08, 0.15);  // 才转了一点就接 = 踩停了
+    out.lateOk = kick(0.3, 1.0);   // 转完很久才接：照样能落（不会"转过头"）
     out.never = kick(0.08, null);
     out.oldFinger = kick(0.08, 0.85, 0.5); // 一直按着没离开过板的手指，不算接住
-    out.double = kick(0.7, 1.0);   // 力度 0.7 ≈ 两圈
-    // 4 Shove-it：力度不同转速不同；接在 90° 会摔
-    const shove = (k, tc) => { place(2.6, -9.6, 0, 4); return run(1.6, (t, i) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('back', -1, k, 1.0); if (t >= tc) { i.fingers = 1; i.capT = 2.0; } }); };
-    out.shoveGood = shove(0.08, 0.85);
-    out.shoveHalf = shove(0.08, 0.2);
-    // 4c 力度一点点不同，转的角度就不同（不接板，看最后停在多少度）
-    const rest = (k) => { place(2.6, -9.6, 0, 4); let a = 0; run(0.9, (t) => { if (at(t, 0)) sk.pop('tail', 0.5); if (at(t, 0.05)) sk.flick('front', -1, k, 1.0); a = sk.flipA; }); return Math.abs(a); };
-    out.rest = [0.1, 0.12, 0.14, 0.16, 0.18].map(rest);
+    out.double = kick(0.6, 1.0);   // 力度 0.6 = 两圈
+    out.doubleAt1 = kick(0.6, 0.27); // 两圈的力度，转到快一圈时就接 = Kickflip
+    out.doubleMid = kick(0.6, 0.45); // 转到一圈半接 = 踩停了
+    out.jerk = maxJerk; out.jerks = jerks;
+    // 4 Shove-it
+    out.shoveGood = kick(0.08, 0.85, null, 'back');
+    out.shoveHalf = kick(0.08, 0.15, null, 'back');
+    out.shove360 = kick(0.6, 1.0, null, 'back');
     // 5 低跳 + 马上猛翻：翻的时候板边不能穿进地里
     place(2.6, -9.6, 0, 4); out.lowFlip = run(1.2, (t, i) => { if (at(t, 0)) sk.pop('tail', 0); if (at(t, 0.01)) sk.flick('front', 1, 1, 1.0); if (t > 0.3) { i.fingers = 1; i.capT = 2; } });
     // 6 键盘 / 简单模式：自动接板
@@ -133,19 +141,26 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     return out;
   });
   const deg = (r) => Math.round(r * 180 / Math.PI);
-  ok(Math.abs(R.hard) / Math.abs(R.soft) > 1.8, `1 拨得越快转得越快：轻拨 0.2 秒转 ${deg(Math.abs(R.soft))}°，猛拨 ${deg(Math.abs(R.hard))}°`);
+  const turns = (a) => +(Math.abs(a) / (2 * Math.PI)).toFixed(3), whole = (a, u) => Math.abs(a / u - Math.round(a / u)) < 1e-3;
+  ok(R.turnsMid.every((a) => whole(a, 2 * Math.PI)) && R.shoveTurns.every((a) => whole(a, Math.PI)), `1 板子每次都停在整圈（翻板）/ 整半圈（转板）：${R.turnsMid.map(turns).join(' / ')} 圈；转板 ${R.shoveTurns.map((a) => Math.round(Math.abs(a) * 57.3)).join(' / ')}°`);
+  ok(R.turnsMid.every((a, i) => !i || Math.abs(a) >= Math.abs(R.turnsMid[i - 1]) - 1e-6) && turns(R.turnsMid[0]) === 1 && turns(R.turnsMid[3]) === 1 && turns(R.turnsMid[4]) === 2 && turns(R.turnsMid[7]) >= 3, `1b 拨得越重圈数越多（力度 0 / 0.15 / 0.3 / 0.44 / 0.5 / 0.65 / 0.8 / 1）：${R.turnsMid.map(turns).join(' → ')} 圈`);
+  ok(turns(R.turnsLo) < turns(R.turnsHi), `1c 同样猛拨，跳得低转得少、跳得高转得多：低跳 ${turns(R.turnsLo)} 圈，高跳 ${turns(R.turnsHi)} 圈`);
   ok(R.hopHi - R.hopLo > 0.6, `2 划得越快跳得越高：轻 ${R.hopLo.toFixed(2)} 米，猛 ${R.hopHi.toFixed(2)} 米`);
-  ok(R.good.names.includes('Kickflip') && !R.good.bails.length, `3a 正好一圈的力度 → Kickflip（${R.good.names} ${R.good.bails}）`);
-  ok(R.good2.names.includes('Kickflip') && !R.good2.bails.length, `3a2 拨重了一点，在转到一圈时接住 → Kickflip（${R.good2.names} ${R.good2.bails}）`);
-  ok(R.early.bails[0] === 'flipShort', `3b 接太早 → 没翻够（${R.early.bails}）`);
-  ok(R.late.bails[0] === 'flipOver', `3c 拨重了又不早点接 → 翻过头（${R.late.bails}）`);
-  ok(R.light.names.includes('Kickflip') && !R.light.bails.length, `3c2 最轻的一拨也接近一圈（矫正），晚点接能落 → Kickflip（${R.light.names} ${R.light.bails}）`);
+  ok(R.pre.names.includes('Kickflip') && !R.pre.bails.length, `2b 先拨再跳（隔 0.3 秒）：起跳时一起出招 → ${R.pre.names} ${R.pre.bails}`);
+  ok(R.preLate.names.includes('Ollie') && !R.preLate.names.some((n) => /flip/i.test(n)), `2c 拨完隔 0.7 秒才跳：不算（${R.preLate.names} ${R.preLate.bails}）`);
+  ok(R.good.names.includes('Kickflip') && !R.good.bails.length && R.good.ci && R.good.ci.kind === 'perfect', `3a 转完的那一刻接 → Kickflip，踩点（${R.good.names} ${R.good.bails} ${R.good.ci && R.good.ci.kind}）`);
+  ok(R.near.names.includes('Kickflip') && !R.near.bails.length, `3a2 快转完（不到 1/3 圈）就接：脚把板带正 → Kickflip（${R.near.names} ${R.near.bails}）`);
+  ok(R.early.bails[0] === 'flipShort', `3b 板子刚转起来就接 → 踩停了，摔（${R.early.bails}）`);
+  ok(R.lateOk.names.includes('Kickflip') && !R.lateOk.bails.length, `3c 转完很久才接也能落，不会转过头（${R.lateOk.names} ${R.lateOk.bails}）`);
   ok(R.never.bails[0] === 'catch', `3d 不接 → 没接住（${R.never.bails}）`);
   ok(R.oldFinger.bails[0] === 'catch', `3e 一直按着、没离开过板的手指不算接住（${R.oldFinger.bails}）`);
-  ok(R.double.names.some((n) => /Double Kickflip/.test(n)) && !R.double.bails.length, `3f 猛拨 + 转两圈时接 → Double Kickflip（${R.double.names} ${R.double.bails}）`);
-  ok(R.shoveGood.names.some((n) => /Shove-it/.test(n)) && !R.shoveGood.bails.length, `4a 转板转到半圈接 → ${R.shoveGood.names}`);
-  ok(/^shove/.test(R.shoveHalf.bails[0] || ''), `4b 转到 90° 就接 → 摔（${R.shoveHalf.bails}）`);
-  ok(R.rest.every((a, i) => !i || a > R.rest[i - 1] + 0.05), `4c 力度差一点，转的角度就差一点：${R.rest.map(deg).join('° → ')}°`);
+  ok(R.double.names.some((n) => /Double Kickflip/.test(n)) && !R.double.bails.length, `3f 用力拨 → Double Kickflip（${R.double.names} ${R.double.bails}）`);
+  ok(R.doubleAt1.names.includes('Kickflip') && !R.doubleAt1.bails.length, `3g 拨了两圈的力度，转到快一圈时接 → Kickflip（${R.doubleAt1.names} ${R.doubleAt1.bails}）`);
+  ok(/^flip/.test(R.doubleMid.bails[0] || ''), `3h 转到一圈半接 → 踩停了，摔（${R.doubleMid.bails}）`);
+  ok(R.jerk < 0.03, `3i 接住后带正是平滑的：角度每一步的变化量最多突变 ${R.jerk.toFixed(4)} 弧度（以前"啪"一下约 0.24）${JSON.stringify(R.jerks)}`);
+  ok(R.shoveGood.names.some((n) => /Shove-it/.test(n)) && !R.shoveGood.bails.length, `4a 转板转完接 → ${R.shoveGood.names}`);
+  ok(/^shove/.test(R.shoveHalf.bails[0] || ''), `4b 转板刚转起来就接 → 摔（${R.shoveHalf.bails}）`);
+  ok(R.shove360.names.some((n) => /360 Shove-it/.test(n)) && !R.shove360.bails.length, `4c 用力侧拨 → 360 Shove-it（${R.shove360.names} ${R.shove360.bails}）`);
   ok(R.lowFlip.mx.air <= 0.03, `5 低跳马上猛翻：空中板子最深穿进地面 ${R.lowFlip.mx.air} 米（${R.lowFlip.names} ${R.lowFlip.bails}）`);
   ok(R.auto.names.some((n) => /Varial Kickflip/.test(n)), `6 自动接板（键盘 / 简单模式）：${R.auto.names} ${R.auto.bails}`);
   ok(R.noseWall.mx.ground <= 0.02 && !R.noseWall.bails.length, `7 慢速顶到台子侧面：板头最深伸进去 ${R.noseWall.mx.ground} 米，没摔`);

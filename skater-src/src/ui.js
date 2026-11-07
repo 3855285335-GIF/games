@@ -51,6 +51,8 @@ export function setHint(t) { const h = $('hint'); h.textContent = t || ''; h.sty
 
 /* ---------- 挑战 ---------- */
 export const chalDone = new Set(store.get('chal', []));
+// 2026-11-07「Kickflip 落地不晃」换成了「踩点」：以前完成过的算完成，改装解锁不会少
+if (chalDone.has('kickClean') && !chalDone.has('perfect')) { chalDone.add('perfect'); store.set('chal', [...chalDone]); }
 // 只算现在还在列表里的挑战（以前版本的挑战改过名字，旧记录不算进去，也不会多算）
 const doneN = () => CHALLENGES.reduce((n, c) => n + (chalDone.has(c.id) ? 1 : 0), 0);
 export function chalCount() { return doneN() + '/' + CHALLENGES.length; }

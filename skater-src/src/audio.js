@@ -227,7 +227,7 @@ export const Aud = {
   clack(sp) { this.play('clack', Math.min(0.7, 0.2 + sp * 0.08), 0.9 + Math.min(0.3, sp * 0.04)); },
   kick() { if (this.smp.land_real) this.play('land', 0.3, 1.12); else this.play('kick', 0.5); }, // 原地转身：前轮砸回地面（有真实录音就用落地声，轻一点）
   flick() { this.play('flick', 0.5); },
-  catch() { this.play('catch', 0.6); },
+  catch(perfect) { if (perfect) this.play('catch', 0.85, 1.12); else this.play('catch', 0.6); }, // 踩点：响一点、脆一点
   grindOn() { this.play('grindOn', 0.6); },
   skid() { this.burst(1100, 0.55, 0.4, 'bandpass', 1.2); this.burst(500, 0.4, 0.25, 'bandpass', 1); },
   impact(v) { this.play('impact', Math.min(1, 0.3 + v * 0.12)); },
