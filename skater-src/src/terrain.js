@@ -136,6 +136,13 @@ export class Terrain {
 }
 const QH = { h: 0, gx: 0, gz: 0, f: null };
 
+// 圆杆的立柱放在哪（杆子底下那一点，画面和碰撞共用）：扶手只在两头，平杆大约每 2.2 米一根
+export function railPosts(r) {
+  const posts = [];
+  if (r.hand) { if (!r.prev) posts.push([r.ax, r.ay, r.az]); posts.push([r.bx, r.by, r.bz]); }
+  else { const n = Math.max(1, Math.round(r.L / 2.2)); for (let i = 0; i <= n; i++) posts.push([r.ax + (r.bx - r.ax) * i / n, r.ay + (r.by - r.ay) * i / n, r.az + (r.bz - r.az) * i / n]); }
+  return posts;
+}
 // 点到 3D 线段（只看水平距离）的最近参数
 export function railClosest(r, x, z) {
   const px = x - r.ax, pz = z - r.az;

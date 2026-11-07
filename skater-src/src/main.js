@@ -7,6 +7,7 @@ import { makeBoard, poseBoard, disposeBoard, DECK, normBoard } from './board.js'
 import { Skater } from './physics.js';
 import { Input } from './input.js';
 import { Combo, airTrick, GRIND_RATE, CHALLENGES } from './tricks.js';
+import { AIRider, AI_TRICKS, AI_LEVELS, recipeOf, difficulty } from './aiskate.js';
 import { submitScore, topScores } from './net.js';
 import { Online } from './online.js';
 import { rnd } from './netcn.js';
@@ -184,14 +185,14 @@ const sk = new Skater(T, {
     if (tr) { combo.add(tr.name, tr.pts); fx.trick(tr.name + (info.perfect ? '  踩点' : '') + '  +' + tr.pts, info.perfect ? '#ffd23f' : info.quality === 'clean' ? '#7dff9b' : '#fff'); }
     checkLandChal(info, tr);
     practice.land(info);
-    sk8.attempt(tr ? tr.name : null, false);
+    sk8.attempt(tr ? tr.name : null, false, recipeOf(info));
   },
   onBail: (why) => {
     Aud.bail(); fx.bail(sk.p); feelHit(0, -0.3, 0.012);
     const msg = { catch: '没接住板！<small>拨完以后，落地前把手指重新放回板上（黄圈提示）</small>',
       flipShort: '接太早了！<small>等板子快转完、黄圈亮了再按回去</small>', flipOver: '接晚了一点！<small>板子转完、黄圈亮的时候按回去</small>',
       shoveShort: '接太早了！<small>等板子快转完、黄圈亮了再按回去</small>', shoveOver: '接晚了一点！<small>板子转完、黄圈亮的时候按回去</small>',
-      angle: '落地太歪了！', hard: '摔太狠了！', wall: '撞墙了！' }[why] || '摔了！';
+      angle: '落地太歪了！', hard: '摔太狠了！', wall: '撞墙了！', rail: '挂在杆子上了！<small>要磨杆：板子顺着杆子（或者横过来）、带着速度落上去</small>' }[why] || '摔了！';
     if (practice.on) toast(msg, '#ff6b5f', 1500); // 摔的原因只在练习里说；平时只有摔倒的动作和声音
     combo.lose();
     sk8.attempt(null, true);
@@ -199,7 +200,13 @@ const sk = new Skater(T, {
   },
   onGrind: (on, g) => {
     if (on) { if (g.locked) store.set('lockN', store.get('lockN', 0) + 1); Aud.grindOn(); feelHit(0.22, -0.12, 0.003); combo.startLive(g.name, GRIND_RATE[g.name] || 150, 'grind'); fx.trick(g.name, '#ffd23f'); if (g.type === 'slide') completeChal('slide'); }
-    else { combo.endLive(); if (g.name === '50-50' && g.t >= 2) completeChal('grind'); practice.grind(g.t); }
+    else { combo.endLive(); if (g.name === '50-50' && g.t >= 2) completeChal('grind'); if (g.type === 'stall' && g.t >= 1) completeChal('stall'); if (g.type !== 'stall') practice.grind(g.t); }
+  },
+  // 磨杆时侧划转 90°：转完换成新的招式接着计分
+  onGrindTurn: (g, phase) => {
+    if (phase === 'start') { Aud.flick(); return; }
+    Aud.grindOn(); combo.startLive(g.name, GRIND_RATE[g.name] || 150, 'grind'); fx.trick(g.name, '#ffd23f');
+    if (g.type === 'slide') completeChal('slide'); completeChal('grindTurn'); practice.gturn(g);
   },
   onManual: (on, kind, t) => {
     if (on) combo.startLive(kind === 'nose' ? 'Nose Manual' : 'Manual', kind === 'nose' ? 130 : 100, 'manual');
@@ -224,9 +231,9 @@ function trackRuns(dt) {
   if (sk.mode === 'grind' && sk.grind) {
     const r = sk.grind.r; if (grindRun.r !== r) { grindRun.r = r; grindRun.d = 0; }
     grindRun.d += Math.abs(sk.grind.sp) * dt;
-    if (T.marks.longLedge && r.box === T.marks.longLedge && grindRun.d >= 9.3) completeChal('ledgeFull');
+    if (T.marks.longLedge && r.box === T.marks.longLedge && grindRun.d >= T.marks.longLedge.d - 0.7) completeChal('ledgeFull'); // 一口气滑完整根长台（街区 10 米、公园 6 米）
   } else grindRun.r = null;
-  if (sk.manual && sk.mode === 'ground' && T.marks.pad && sk.feat === T.marks.pad) { padRun.d += sk.s * dt; if (padRun.d >= 3.4) completeChal('manualPad'); } // 台长 4.2 米：跳上去会落在台头往里一点，翘过 3.4 米就算从头到尾
+  if (sk.manual && sk.mode === 'ground' && T.marks.pad && sk.feat === T.marks.pad) { padRun.d += sk.s * dt; if (padRun.d >= Math.max(T.marks.pad.w, T.marks.pad.d) - 0.8) completeChal('manualPad'); } // 台长 4.2 米：跳上去会落在台头往里一点，翘过 3.4 米就算从头到尾
   else if (!sk.manual || sk.mode !== 'ground') padRun.d = 0;
 }
 function checkLandChal(info, tr) {
@@ -237,6 +244,8 @@ function checkLandChal(info, tr) {
   if (/^(Fakie )?Ollie$/.test(n) && info.height < 0.6 && info.quality !== 'sketchy') completeChal('ollieLow');
   if (/(^|\s)Kickflip/.test(n) && !/Varial|Double|Triple|Quad|\dx /.test(n)) completeChal('kick');
   if (info.perfect) completeChal('perfect');
+  if (/ Out$/.test(n)) completeChal('flipOut');
+  if (/Impossible/.test(n)) completeChal('impossible');
   if (/Double Kickflip/.test(n)) completeChal('double');
   if (/Triple Kickflip/.test(n)) completeChal('triple');
   if (/(^|\s)360 Shove-it/.test(n)) completeChal('shove360');
@@ -248,13 +257,15 @@ function checkLandChal(info, tr) {
   if (Math.abs(info.spin) >= Math.PI * 2 - 0.65) completeChal('spin');
   if (info.air.fromTrans && info.air.lipY > M.bigQP && info.above >= 1.2) completeChal('vert');
   const S = M.stairs;
-  if (info.air.popped && info.air.y0 > S.top && info.y < 0.05 && sk.p.z > S.zMin && sk.p.x > S.x0 && sk.p.x < S.x1) completeChal('stairs');
+  if (S && info.air.popped && info.air.y0 > S.top && info.y < 0.05 && (S.zMin == null || sk.p.z > S.zMin) && (S.zMax == null || sk.p.z < S.zMax) && sk.p.x > S.x0 && sk.p.x < S.x1) { completeChal('stairs'); if (M.stairs5) completeChal('stairs5'); }
 }
 
 /* ---------------- 特效 / 练习 / 回放 ---------------- */
 const fx = new FX(scene);
 const practice = new Practice({
-  teleport: () => {
+  teleport: (what) => {
+    // Stall 练习：放到长台东边 1.6 米，板头朝着台子
+    if (what === 'stall' && T.F && T.F.ledge) { const f = T.F.ledge; combo.clear(); sk.reset(f.x + f.w / 2 + 1.6, f.z + 1, -Math.PI / 2); sk.s = 0; camInit = false; return; }
     const R = T.rails.find((r) => r.flat && r.kind === 'rail');
     if (!R) return;
     const dx = R.bx - R.ax, dz = R.bz - R.az, L = Math.hypot(dx, dz);
@@ -292,7 +303,29 @@ const sk8 = new Sk8({
   send: (ev, p, f) => online.send(ev, p, f), toast: (t) => toast(esc(t), '#fff', 1600),
   ui: (v) => { renderSk8(v); bindSk8(); },
   win: () => { completeChal('skatewin'); Aud.done(); },
+  // 和电脑玩：轮到电脑时它在旁边找一条直道真的滑一遍，镜头跟过去看；recipe 为空 = 电脑自己出招
+  aiTurn: (recipe, level, cb) => {
+    const L = AI_LEVELS[level] || AI_LEVELS[1];
+    let r = recipe, d;
+    if (!r) { const pool = AI_TRICKS.filter((t) => t.d <= L.maxD); const t = pool[Math.floor(Math.random() * pool.length)]; r = t.r; d = t.d; } else d = difficulty(r);
+    const ok = Math.random() < clamp(L.p0 - L.k * d, 0.12, 0.97), want = recipe ? sk8.state && sk8.state.trick : null;
+    aiWatch = true; input.enabled = false; input.clear();
+    clearTimeout(aiDelay);
+    aiDelay = setTimeout(() => { ai.setTerrain(T); ai.start(r, ok, sk.p, (res) => { aiWatch = false; if (state === 'play') { input.enabled = true; camInit = false; } cb({ ok: res.ok && (!want || res.trick === want), trick: res.trick, recipe: r }); }); camInit = false; }, 700);
+  },
+  aiStop: () => { clearTimeout(aiDelay); ai.stop(); if (aiWatch) { aiWatch = false; camInit = false; if (state === 'play') input.enabled = true; } },
+  aiWin: () => completeChal('aiWin'),
 });
+const ai = new AIRider(scene, $('labels'));
+let aiWatch = false, aiDelay = 0;
+function startAI(level) {
+  hideAll();
+  if (state === 'pause') { state = 'play'; input.enabled = true; show('hud', true); }
+  else if (state !== 'play') startGame('free');
+  leaveRun(); sk8.vsAI(level);
+}
+for (const k of [0, 1, 2]) $('ai' + k).onclick = () => startAI(k);
+$('aiNo').onclick = () => closePanel('aiPick');
 const online = new Online({
   url: SUPABASE_URL, key: SUPABASE_KEY, scene, myId, fx, sk, sk8,
   getName: () => myName, getCfg: () => cfg, getScore: () => combo.total, getTrick: () => lastTrick,
@@ -327,6 +360,26 @@ function leaveRun() { if (mode !== 'run') return; mode = 'free'; clearTimeout(ru
 $('invYes').onclick = () => { leaveRun(); sk8.join(); }; $('invNo').onclick = () => sk8.decline();
 $('lobbyGo').onclick = () => sk8.start(); $('lobbyNo').onclick = () => sk8.cancel();
 
+/* ---------------- 调手感用：显示每次起跳 / 拨板的力度、转了几圈（设置里打开） ---------------- */
+const force = { pop: null, f: null, s: null, t: 0 };
+function forceNote(kind, k) {
+  if (!settings.force || k == null) return;
+  if (kind === 'pop') force.pop = k; else if (kind === 'front') force.f = k; else if (kind === 'back') force.s = k;
+  force.t = 3;
+}
+function forceFrame(dt) {
+  const el = $('forceInfo');
+  if (!settings.force || force.t <= 0 || state !== 'play') { if (!el.classList.contains('hide')) show('forceInfo', false); force.t = Math.max(0, force.t - dt); if (force.t <= 0) force.pop = force.f = force.s = null; return; }
+  force.t -= dt;
+  const a = sk.air, turns = (P, u) => (P ? Math.round(Math.abs(P.g) / (P.unit || u) * 100) / 100 : 0);
+  const parts = [];
+  if (force.pop != null) parts.push('起跳 ' + force.pop.toFixed(2));
+  if (force.f != null) parts.push('翻板 ' + force.f.toFixed(2) + (a && a.pF ? ' → ' + turns(a.pF, Math.PI * 2) + ' 圈' : ''));
+  if (force.s != null) parts.push('转板 ' + force.s.toFixed(2) + (a && a.pS ? ' → ' + Math.round(turns(a.pS, Math.PI * 2) * 360) + '°' : ''));
+  const txt = parts.join(' ｜ ') + (parts.length ? '（力度 0～1）' : '');
+  if (el.textContent !== txt) el.textContent = txt;
+  show('forceInfo', !!parts.length);
+}
 /* ---------------- 手感反馈（只影响画面）：落地时板面下沉回弹、镜头跟着沉一下 / 轻震 ---------------- */
 const feel = { comp: 0, compV: 0, dip: 0, dipV: 0, shake: 0, wob: 0, wobV: 0 };
 function feelHit(compV, dipV, shake) { feel.compV += compV; feel.dipV += dipV; feel.shake = Math.max(feel.shake, shake); }
@@ -403,7 +456,8 @@ function previewPose(dt) {
 function updateCamera(dt, P, travel, opts) {
   const portrait = cam.aspect < 1, grind = sk.mode === 'grind';
   // 镜头像 Touchgrind 一样贴着板子、压低：板子在屏幕上又大又长（板尾在屏幕下方 88% 左右，板头在中间），远处的地平线在上面 1/4
-  const dist = (portrait ? 0.86 : 0.9) + (grind ? 0.25 : 0), hgt = (portrait ? 0.66 : 0.58) + (grind ? 0.1 : 0);
+  const spec = opts === 'spec'; // 看电脑滑：镜头拉远一点，看得到整个招
+  const dist = spec ? 2.4 : (portrait ? 0.86 : 0.9) + (grind ? 0.25 : 0), hgt = spec ? 1.05 : (portrait ? 0.66 : 0.58) + (grind ? 0.1 : 0);
   const sp = sk.speed();
   // 只有从坡上“几乎竖直”飞出去才算 vert；跳台（30° 小坡）这种往前飞的按普通腾空处理
   if (!opts && sk.mode === 'air' && sk.air !== camAir) { camAir = sk.air; camAirVert = !!(sk.air && sk.air.fromTrans) && sk.v.y > 1.2 * Math.hypot(sk.v.x, sk.v.z); }
@@ -421,7 +475,8 @@ function updateCamera(dt, P, travel, opts) {
   const fx_ = Math.sin(camYaw), fz = Math.cos(camYaw);
   const tgt = tmpV.copy(P); tgt.y += 0.08;
   const d = dist + Math.min(0.12, sp * 0.015);
-  const cx = tgt.x - fx_ * d, cz = tgt.z - fz * d;
+  // 镜头不出场地：板子背对着墙、贴着墙时，镜头会跑到墙外面（那里的"地面高度"是 50 米，镜头会一下子飞上天）→ 夹在场地里面
+  const B = T.bounds, cx = clamp(tgt.x - fx_ * d, B.minX + 0.08, B.maxX - 0.08), cz = clamp(tgt.z - fz * d, B.minZ + 0.08, B.maxZ - 0.08);
   const gh = T.height(cx, cz), rise = tgt.y - gh;
   // 普通腾空：镜头跟住板子 85% 的高度、跟得更快，板子在屏幕上的位置和大小基本不变，手指不用追着按
   let cy = gh + hgt + (rise > 0 ? rise * (vertAir ? 0.35 : flatAir ? 0.85 : 0.55) : rise * 0.8);
@@ -460,7 +515,7 @@ function boardGeo() {
 }
 
 /* ---------------- 流程 ---------------- */
-const PANELS = ['menu', 'pause', 'settings', 'help', 'chal', 'result', 'lb', 'garage'];
+const PANELS = ['menu', 'pause', 'settings', 'help', 'chal', 'result', 'lb', 'garage', 'aiPick'];
 let panelBack = 'menu';
 function hideAll() { for (const id of PANELS) show(id, false); }
 function readInputs() {
@@ -520,7 +575,7 @@ function pause(on) {
 }
 function toMenu() {
   state = 'menu'; input.enabled = false; input.clear();
-  hideAll(); show('hud', false); show('rp', false); show('rpTag', false); show('menu', true); setHint('');
+  hideAll(); show('hud', false); show('rp', false); show('rpTag', false); show('rpInfo', false); show('vidSave', false); show('menu', true); setHint('');
   practice.stop(); online.setPlaying(false); sk8.cancel(); refreshChal(); roomInfo();
   for (const el of dotEls.values()) el.remove(); dotEls.clear();
 }
@@ -604,6 +659,47 @@ function exitReplay() { player = null; show('rp', false); show('rpTag', false); 
 $('rpPlay').onclick = () => { if (!player) return; if (!player.playing && player.t >= player.dur) player.t = 0; player.playing = !player.playing; $('rpPlay').textContent = player.playing ? '暂停' : '播放'; };
 $('rpSpd').onclick = () => { if (!player) return; player.speed = player.speed === 1 ? 0.5 : player.speed === 0.5 ? 0.25 : 1; $('rpSpd').textContent = player.speed + '×'; };
 $('rpCam').onclick = () => { if (!player) return; player.cam = (player.cam + 1) % 3; $('rpCam').textContent = ['跟随', '环绕', '侧面'][player.cam]; };
+/* ---------------- 回放存成视频：把 3D 画面录下来（MediaRecorder），iPhone 上是 MP4，录完用分享菜单「存储视频」 ---------------- */
+let vidRec = null, vidFile = null;
+const vidCan = document.createElement('canvas'), vidCtx = vidCan.getContext('2d');
+function vidMime() { if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return ''; for (const m of ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']) if (MediaRecorder.isTypeSupported(m)) return m; return ''; }
+$('rpSave').onclick = () => {
+  if (!player || vidRec) return;
+  if (!window.MediaRecorder || !vidCan.captureStream) { toast('这个浏览器不支持录视频', '#ffb36b', 1600); return; }
+  if (player.t >= player.dur - 0.3) player.t = Math.max(0, player.dur - 8); // 在结尾：从倒数 8 秒开始录
+  // 画面先复制到一张普通画布上再录（直接录 3D 画布在有的浏览器上会是黑的）；分辨率和屏幕一样，最长边不超过 1920
+  const sc = Math.min(1, 1920 / Math.max(canvas.width, canvas.height));
+  vidCan.width = Math.round(canvas.width * sc / 2) * 2; vidCan.height = Math.round(canvas.height * sc / 2) * 2;
+  const stream = vidCan.captureStream(30), mime = vidMime();
+  let rec;
+  try { rec = new MediaRecorder(stream, Object.assign({ videoBitsPerSecond: 10000000 }, mime ? { mimeType: mime } : {})); } catch (e) { toast('录视频失败：' + esc(e.message || String(e)), '#ff6b5f', 2000); return; }
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    const type = (rec.mimeType || mime || 'video/webm').split(';')[0], ext = /mp4/.test(type) ? 'mp4' : 'webm';
+    const blob = new Blob(chunks, { type }), d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    vidFile = new File([blob], `滑板回放-${d.getMonth() + 1}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`, { type });
+    window.__lastVideo = { size: blob.size, type };
+    vidRec = null; $('rpSave').firstChild.textContent = '存成视频'; show('vidSave', blob.size > 0);
+  };
+  vidRec = rec; rec.start(500);
+  player.playing = true; $('rpPlay').textContent = '暂停'; $('rpSave').firstChild.textContent = '录制中…';
+};
+// 保存：能分享文件就弹分享菜单（iPhone 里选「存储视频」进相册），不行就直接下载
+$('vidGo').onclick = async () => {
+  const f = vidFile; if (!f) return; show('vidSave', false);
+  try { if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: '滑板回放' }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+};
+$('vidNo').onclick = () => { vidFile = null; show('vidSave', false); };
+function vidFrame() {
+  if (!vidRec) return;
+  vidCtx.drawImage(canvas, 0, 0, vidCan.width, vidCan.height);
+  const nt = player && player.note();
+  if (nt) { vidCtx.font = `bold ${Math.round(vidCan.width / 22)}px sans-serif`; vidCtx.textAlign = 'center'; vidCtx.fillStyle = 'rgba(0,0,0,.45)'; vidCtx.fillText(nt.text, vidCan.width / 2 + 2, vidCan.height * 0.16 + 2); vidCtx.fillStyle = nt.col; vidCtx.fillText(nt.text, vidCan.width / 2, vidCan.height * 0.16); }
+  if (!player || !player.playing || state !== 'replay') vidRec.stop();
+}
 $('rpBar').oninput = () => { if (!player) return; player.t = (+$('rpBar').value / 1000) * player.dur; player.playing = false; $('rpPlay').textContent = '播放'; };
 $('rpExit').onclick = () => exitReplay();
 
@@ -633,6 +729,7 @@ $('pResume').onclick = () => pause(false);
 $('pSpawn').onclick = () => { combo.lose(); sk.reset(T.spawn.x, T.spawn.z, T.spawn.yaw); camInit = false; pause(false); };
 $('pReplay').onclick = () => startReplay();
 $('pSk8').onclick = () => { pause(false); leaveRun(); sk8.host(); };
+$('pAI').onclick = () => openPanel('aiPick'); $('mAI').onclick = () => openPanel('aiPick');
 $('pRestart').onclick = () => startGame(mode);
 $('pMenu').onclick = () => toMenu();
 $('rAgain').onclick = () => startGame(mode === 'run' ? 'run' : 'timed');
@@ -666,9 +763,9 @@ function frame(now) {
       input.geo = geo;
       I = input.update(dt, sk.mode !== 'air');
       for (const e of input.drain()) {
-        if (e.type === 'pop') sk.pop(e.kind, e.k);
-        else if (e.type === 'flick') sk.flick(e.which, e.dir, e.k, e.t);
-        else if (e.type === 'powerslide') { if (!sk.powerslide(e.dir)) { sk.flick('front', e.dir); sk.flick('back', e.dir); } }
+        if (e.type === 'pop') { sk.pop(e.kind, e.k); forceNote('pop', e.k); }
+        else if (e.type === 'flick') { sk.flick(e.which, e.dir, e.k, e.t); forceNote(e.which, e.k); }
+        else if (e.type === 'powerslide') { if (!sk.powerslide(e.dir)) { sk.flick('front', e.dir); sk.flick('back', -e.dir); } } // 转板方向和单独后指侧划一致
         else if (e.type === 'reset') { combo.lose(); sk.respawn(); camInit = false; }
       }
       // 两指长按（键盘 G）：附近有能磨的就自动跳上去
@@ -684,6 +781,8 @@ function frame(now) {
       trackRuns(dt);
       if (mode === 'timed') { timeLeft -= dt; $('timer').textContent = Math.max(0, Math.ceil(timeLeft)); if (timeLeft <= 0) endGame('timed'); }
       practice.update(dt, sk, I, geo);
+      ai.step(dt);
+      forceFrame(dt);
       kickTipFrame(dt, I);
       sk8.tick();
       // 特效
@@ -717,7 +816,9 @@ function frame(now) {
       const r = player.cam === 1 ? 3.2 : 2.6, a = player.cam === 1 ? orbitA : camYaw + Math.PI / 2;
       cam.position.set(P.x + Math.sin(a) * r, P.y + (player.cam === 1 ? 1.3 : 0.6), P.z + Math.cos(a) * r);
       cam.lookAt(P.x, P.y + 0.15, P.z);
-    } else if (state !== 'menu' && state !== 'garage') updateCamera(dt, P, travel, state === 'replay');
+    } else if (state === 'play' && aiWatch && ai.on) updateCamera(dt, ai.sk.p, ai.sk.travelYaw(), 'spec'); // 电脑出招 / 照做时镜头跟着它
+    else if (state !== 'menu' && state !== 'garage') updateCamera(dt, P, travel, state === 'replay');
+    ai.label(project);
     // 阴影跟着板子
     const tx = 26 / (sun.shadow.mapSize.x || 2048), sx = Math.round(P.x / tx) * tx, sz = Math.round(P.z / tx) * tx;
     sun.target.position.set(sx, P.y, sz); sun.position.set(sx + SUN_DIR.x * 40, P.y + SUN_DIR.y * 40, sz + SUN_DIR.z * 40);
@@ -764,6 +865,7 @@ function frame(now) {
     }
     if (window.__camHook) window.__camHook(cam, P); // 测试用：近景检查模型
     if (!window.__noRender && glReady) renderer.render(scene, cam);
+    vidFrame(); // 录视频：刚画完就复制这一帧
   } catch (e) { showErr(e && e.message ? e.message : String(e)); console.error(e); }
 }
 applyTime(); applyQuality();
@@ -773,4 +875,4 @@ requestAnimationFrame(frame);
 let glReady = false;
 requestAnimationFrame(() => setTimeout(() => { try { renderer.compile(scene, cam); } catch (e) { console.error(e); } glReady = true; }, 0));
 Aud.prep(1200); // 菜单出来以后趁空闲把音效算好，点开始时不用再等
-window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, Aud, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip, trackRuns, grindRun, padRun, endGame, get mode() { return mode; }, startReplay, get player() { return player; } };
+window.__dbg = { __setTime: (v) => { timeLeft = v; }, renderer, mats, Aud, get sk() { return sk; }, get T() { return T; }, input, combo, get remotes() { return online.remotes; }, online, cam, sk8, practice, rec, startGame, toMenu, loadMap, settings, renderQ, get board() { return board; }, scene, CHALLENGES, chalCount, lighting, get geo() { return geo; }, get state() { return state; }, fx, applyTime, qTip, trackRuns, grindRun, padRun, endGame, get mode() { return mode; }, startReplay, get player() { return player; }, ai, AI_TRICKS, get aiWatch() { return aiWatch; } };

@@ -9,7 +9,7 @@ export const $ = (id) => document.getElementById(id);
 export const show = (id, on) => $(id).classList.toggle('hide', !on);
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export const settings = Object.assign({ easy: false, q: 2, time: 'auto', flick: 3, steer: 3, music: true, sfx: true, dots: true }, store.get('settings', {}));
+export const settings = Object.assign({ easy: false, q: 2, time: 'auto', flick: 3, steer: 3, music: true, sfx: true, dots: true, force: false }, store.get('settings', {}));
 // 画质只由玩家决定（旧版本存的“自动”= -1，统一换成“高”）
 if (![0, 1, 2, 3].includes(settings.q)) settings.q = 2;
 export const Q_NAME = ['低', '中', '高', '极高'];
@@ -86,7 +86,7 @@ export function bindSettings(apply) {
     const el = $(id); el.classList.toggle('on', !!settings[key]);
     el.onclick = () => { settings[key] = !settings[key]; el.classList.toggle('on', settings[key]); saveSettings(); apply(key); Aud.click(); };
   };
-  tg('sEasy', 'easy'); tg('sMus', 'music'); tg('sSfx', 'sfx'); tg('sDots', 'dots');
+  tg('sEasy', 'easy'); tg('sMus', 'music'); tg('sSfx', 'sfx'); tg('sDots', 'dots'); tg('sForce', 'force');
   const seg = (id, key, num) => {
     const el = $(id), paint = () => { [...el.children].forEach((s) => s.classList.toggle('on', String(settings[key]) === s.dataset.v)); if (key === 'q') $('sQNote').textContent = Q_NOTE[settings.q] || ''; };
     paint(); segPaint[key] = paint;
@@ -155,7 +155,7 @@ export function renderSk8(v) {
   if (v.kind === 'game') {
     const L = (n) => [...'SKATE'].map((c, i) => (i < n ? c : `<i>${c}</i>`)).join('');
     $('sk8').innerHTML = v.rows.map((r) => `<div class="r ${r.turn ? 'turn' : ''} ${r.out ? 'out' : ''}"><span>${r.turn ? '▶ ' : ''}${esc(r.name)}</span><span class="L">${L(r.letters)}</span></div>`).join('') +
-      `<div class="m ${v.mine ? 'mine' : ''}">${esc(v.msg)}${v.over ? '' : ` <span class="small">${v.left}s</span>`}</div>` + (v.last ? `<div class="lst">${esc(v.last)}</div>` : '') +
+      `<div class="m ${v.mine ? 'mine' : ''}">${esc(v.msg)}${v.over || (v.ai && !v.mine) ? '' : ` <span class="small">${v.left}s</span>`}</div>` + (v.last ? `<div class="lst">${esc(v.last)}</div>` : '') +
       (v.over ? '<button class="btn" id="sk8Close" style="padding:8px">关闭</button>' : v.host ? '<button class="btn" id="sk8Stop" style="padding:8px;font-size:13px">结束对战</button>' : '');
   }
 }

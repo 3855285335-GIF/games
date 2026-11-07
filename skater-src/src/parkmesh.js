@@ -2,7 +2,7 @@
 import { Mesh, MeshStandardMaterial, Shape, Path, ShapeGeometry, CylinderGeometry, TubeGeometry, CatmullRomCurve3, Vector3, Matrix4, Quaternion, Group,
   IcosahedronGeometry, BoxGeometry, SphereGeometry, ShaderMaterial, BackSide, Color, DoubleSide, PlaneGeometry, MeshBasicMaterial } from 'three';
 import { MB, between } from './meshkit.js';
-import { toWorld, dirWorld } from './terrain.js';
+import { toWorld, dirWorld, railPosts } from './terrain.js';
 import * as TX from './textures.js';
 import { rng } from './util.js';
 
@@ -190,10 +190,7 @@ export function buildRails(T, H, rail, metal, steel, angle) {
       _up.set(0, 1, 0).applyQuaternion(_rq.setFromRotationMatrix(bm).invert());
       const th = Math.atan2(_up.x, _up.z);
       metal.addGeo(new CylinderGeometry(0.0222, 0.0222, 1, 6, 1, true, th - 0.55, 1.1), bm.clone());
-      const posts = [];
-      if (r.hand) { if (!r.prev) posts.push([r.ax, r.ay, r.az]); posts.push([r.bx, r.by, r.bz]); }
-      else { const n = Math.max(1, Math.round(r.L / 2.2)); for (let i = 0; i <= n; i++) posts.push([r.ax + (r.bx - r.ax) * i / n, r.ay, r.az + (r.bz - r.az) * i / n]); }
-      for (const [x, y, z] of posts) {
+      for (const [x, y, z] of railPosts(r)) {
         const g = H(x, z);
         steel.addGeo(new CylinderGeometry(0.024, 0.024, 1, 8), between(x, g - 0.02, z, x, y - 0.015, z));
         steel.addGeo(new CylinderGeometry(0.07, 0.07, 1, 8), between(x, g, z, x, g + 0.012, z));

@@ -112,8 +112,8 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     out.railY = railY;
     // 12 大量随机招式 + 摔倒（三张地图各 40 秒）：最深穿模
     out.fuzz = {};
-    for (const m of ['spot1', 'spot2', 'spot3']) { // 只有一张地图：换三组随机数各跑 40 秒
-      __dbg.loadMap('spot');
+    for (const m of ['spot1', 'spot2', 'spot3', 'park1', 'park2', 'park3']) { // 两张地图，各换三组随机数跑 40 秒
+      __dbg.loadMap(m.slice(0, 4));
       let s = 7 + m.length * 13 + m.charCodeAt(4) * 101; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
       place(sk.T.spawn.x, sk.T.spawn.z, sk.T.spawn.yaw, 3);
       let tc = 9, cap = 1;

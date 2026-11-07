@@ -115,10 +115,12 @@ export class Input {
     return [(p.x - o[1]) / dt, (p.y - o[2]) / dt, Math.hypot(p.x - o[1], p.y - o[2])];
   }
   _flickCheck(p, t) {
+    const tn0 = () => this.now();
     const [vx, vy, dist] = this._vel(p, t), sp = Math.hypot(vx, vy), S = this.scale;
     const sens = (this.opts.sens && this.opts.sens().flick) || 1;
     const TH = 640 * S * sens;
-    if (!p.armed) { if (sp < 240 * S) p.armed = true; return; }
+    // 划过一次以后：要慢下来，而且重新踩回板上或者过了 0.3 秒，才能再算一次（不然一下划动中间速度忽快忽慢，会被算成拨了两下、多转好几圈）
+    if (!p.armed) { if (sp < 240 * S && (t - (p.swipeT || -9) > 0.3 || p.capT > (p.swipeT || -9))) p.armed = true; return; }
     if (sp < TH || dist < 14 * S) return;
     if (!p.role) this._roles();
     // 两指朝相反方向绕着转 = 旋转手势，不算划板
@@ -138,18 +140,20 @@ export class Input {
     // 力度 k：刚过门槛 = 0，门槛的 3.3 倍以上 = 1（越快跳得越高 / 转得越快）
     const k = clamp((sp / TH - 1) / 2.3, 0, 1);
     if (cb > 0.57 || (cd > 0.77 && cb > 0.2)) {
-      if (this.inAir) return; // 空中往后划没有意义
+      // 空中：刚起跳另一根手指才跟着往后划（两指没有完全同时）→ 也算 Impossible
+      if (this.inAir) { if (tn0() - (this.lastPopT || -9) < 0.2 && !this.impLate) { this.impLate = true; this.events.push({ type: 'flick', which: 'imp', dir: 1, k, t }); p.armed = false; p.flicked = true; p.swipeT = t; } return; }
       // 先记下来，等这根手指松开（抬起或划出板尾）的那一刻才起跳
       this.arms = this.arms.filter((a) => a.id !== p.id);
       this.arms.push({ id: p.id, kind: p.role === 'front' ? 'nose' : 'tail', k, t, rel: false });
       if (p.trail) p.trail.kind = 'pop';
     } else if (Math.abs(side) / sp > 0.64) {
-      const ev = { type: 'flick', which: p.role === 'front' ? 'front' : 'back', dir: side > 0 ? 1 : -1, id: p.id, t, k };
+      // 转板的方向：2026-11-07 用户说"Shove-it 转的方向和动作是反着的"→ 反过来（后指往右划，板头往右转）
+      const front = p.role === 'front', ev = { type: 'flick', which: front ? 'front' : 'back', dir: (side > 0 ? 1 : -1) * (front ? 1 : -1), side: side > 0 ? 1 : -1, id: p.id, t, k };
       if (this.inAir) this.events.push(ev); else { this.pend.push(ev); if (ev.which === 'front') this.groundFlickT = t; }
       p.flickT = t;
       if (p.trail) p.trail.kind = ev.which === 'front' ? 'flip' : 'shove';
     } else return;
-    p.armed = false; p.flicked = true;
+    p.armed = false; p.flicked = true; p.swipeT = t;
     p.x0 = p.x; p.y0 = p.y;
     this.anchor = null;
   }
@@ -165,7 +169,7 @@ export class Input {
     const ev = { Space: { type: 'pop', kind: 'tail', k: 0.6 }, KeyV: { type: 'pop', kind: 'tail', k: 0.05 }, KeyN: { type: 'pop', kind: 'nose', k: 0.6 },
       KeyJ: { type: 'flick', which: 'front', dir: -1 }, KeyL: { type: 'flick', which: 'front', dir: 1 },
       KeyK: { type: 'flick', which: 'back', dir: -1 }, KeyI: { type: 'flick', which: 'back', dir: 1 },
-      KeyX: { type: 'powerslide', dir: 1 }, KeyR: { type: 'reset' } }[k];
+      KeyU: { type: 'flick', which: 'imp', dir: 1 }, KeyX: { type: 'powerslide', dir: 1 }, KeyR: { type: 'reset' } }[k];
     if (ev) {
       const o = Object.assign({}, ev); if (o.type === 'flick' && e.shiftKey) o.k = 0.7; // 按住 Shift = 用力拨（翻两圈 / 转一整圈）
       this.events.push(o);
@@ -184,7 +188,7 @@ export class Input {
     if (this.pend.length >= 2) {
       for (let i = 0; i < this.pend.length; i++) for (let j = i + 1; j < this.pend.length; j++) {
         const a = this.pend[i], b = this.pend[j];
-        if (a && b && a.id !== b.id && a.dir === b.dir && Math.abs(a.t - b.t) < 0.09) { this.events.push({ type: 'powerslide', dir: a.dir }); this.pend[i] = this.pend[j] = null; }
+        if (a && b && a.id !== b.id && a.side === b.side && Math.abs(a.t - b.t) < 0.09) { this.events.push({ type: 'powerslide', dir: a.side }); this.pend[i] = this.pend[j] = null; } // 按屏幕上往哪边甩比（转板的 dir 是反过来的）
       }
       this.pend = this.pend.filter(Boolean);
     }
@@ -206,10 +210,17 @@ export class Input {
       this.arms.push({ id: -1, kind: 'tail', k: 0.25, t: tn, rel: true }); this.backLiftT = this.groundFlickT = -9;
     } else if (tn - this.backLiftT > 0.15) this.backLiftT = -9;
     // 松开了的起跳现在出（排在这一帧的拨板后面，物理那边先记下拨板，起跳时一起出招）；划了 0.35 秒还没松开 = 不跳
-    this.arms = this.arms.filter((a) => {
-      if (a.rel) { if (!this.inAir) this.events.push({ type: 'pop', kind: a.kind, k: a.k }); return false; }
-      return tn - a.t < 0.35;
-    });
+    // 两根手指一起往板尾方向划（0.15 秒内）= Impossible：起跳的同时板子竖着绕后脚翻一圈
+    for (const a of this.arms) {
+      if (!a.rel || a.done) continue;
+      const b = this.arms.find((o) => o !== a && !o.done && o.id !== a.id && o.id >= 0 && a.id >= 0 && Math.abs(o.t - a.t) < 0.15);
+      if (!this.inAir) {
+        if (b) { this.events.push({ type: 'flick', which: 'imp', dir: 1, k: Math.max(a.k, b.k), t: Math.min(a.t, b.t) }); b.done = true; }
+        this.events.push({ type: 'pop', kind: b ? 'tail' : a.kind, k: b ? Math.max(a.k, b.k) : a.k }); this.lastPopT = tn; this.impLate = !!b;
+      }
+      a.done = true;
+    }
+    this.arms = this.arms.filter((a) => !a.done && tn - a.t < 0.35);
     const act = real.filter((p) => p.on);
     const sens = (this.opts.sens && this.opts.sens().steer) || 1;
     let lean = 0, push = 0, brake = 0, manual = 0, twist = 0, pump = false, kick = 0, kickPivot = -1;

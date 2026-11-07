@@ -4,6 +4,7 @@ import { Terrain, toWorld } from './terrain.js';
 const D2R = Math.PI / 180, PI = Math.PI;
 export const MAPS = [
   { id: 'spot', name: '街区', desc: '24 × 24 米，道具挨着放，几秒一个' },
+  { id: 'park', name: '小公园', desc: '碗池、5 级台阶加扶手、跳台、坡，也是 24 × 24 米' },
 ];
 // 盒子较长的两条棱做成可磨的边
 function ledgeEdges(T, f, kind) {
@@ -92,8 +93,41 @@ function buildSpot() {
   return T;
 }
 
-export function buildMap() {
-  const T = buildSpot();
-  T.id = 'spot';
+// 小公园：24 × 24 米，全是道具（2026-11-07 加的第二张，用户要"紧凑、几秒一个"）。出生在南边朝北：
+// 东北角碗池（南边有出口坡道），西北角 0.8 米高的平台 + 5 级台阶往南下来 + 扶手，平台东边一条坡上去；
+// 中间金字塔（四面坡、平顶 1 米见方），东边整面四分之一管，南边一个跳台、一根低平杆、一个 Manual 台，西边一条长边沿
+function buildPark() {
+  const T = new Terrain({ minX: -12, maxX: 12, minZ: -12, maxZ: 12 });
+  const F = {};
+  T.spawn = { x: 1.5, z: -10.2, yaw: 0 };
+  T.theme = { outside: 'hdr', time: 'dusk', wall: 0.55 };
+  /* 东北：碗池（平底 4.4 × 4 米，深约 1.3 米），南边开口有缓坡出来 */
+  // 出口坡道要缓（坡度 0.29 以下）：坡太陡时物理按"大斜坡"只往上抬、不查两边的墙，轮子会蹭进出口两边的墙里
+  F.bowl = T.add({ t: 'bowl', x: 6.2, z: 6.4, ax: 2.2, az: 2.0, r: 1.6, a: 80 * D2R, exit: { side: -1, w: 1.0, L: 4.6 } }); bowlCoping(T, F.bowl);
+  /* 西北：0.8 米高的平台 + 往南下来的 5 级台阶（每级 16 厘米）+ 西边的扶手；平台东边一条坡道上去 */
+  F.plat = T.add({ t: 'box', x: -8, z: 7.6, w: 6, d: 4.8, h: 0.8, name: 'platform' });
+  F.stairs = T.add({ t: 'stairs', x: -8, z: 5.2, yaw: PI, w: 4, n: 6, rise: 0.16, run: 0.36 });
+  handrail(T, -10.3, 6.6, 1.22, 5.2, 3.4, 0.42, 2.6);
+  F.bank = T.add({ t: 'ramp', x: -1.6, z: 7.6, yaw: -PI / 2, w: 3, l: 3.4, h: 0.8 });
+  /* 中间：金字塔（四面坡、平顶 1 米见方） */
+  F.pyr = T.add({ t: 'pyr', x: 0.2, z: 0.3, w: 4.6, d: 4.6, h: 0.5, run: 1.8, name: 'pyramid' }); // 四面坡度 0.28（缓一点，斜着上坡时轮子不会蹭进地里）
+  /* 东：整面四分之一管（高约 1 米），顶上有平台 */
+  F.qp = T.add({ t: 'qp', x: 9.4, z: -5.5, yaw: PI / 2, w: 9, r: 1.6, a: 70 * D2R, deck: 1.0 }); copingOf(T, F.qp);
+  /* 南：跳台、低平杆、Manual 台 */
+  F.kicker = T.add({ t: 'ramp', x: -3.4, z: -8.6, yaw: 0, w: 2, l: 1.4, h: 0.42, mat: 'wood' });
+  T.rail(-1.5, 0.3, -6.0, 5.0, 0.3, -6.0, 'rail', { flat: true });
+  F.pad = T.add({ t: 'box', x: 5.2, z: -9.2, w: 3.6, d: 1.8, h: 0.16, name: 'pad' }); ledgeEdges(T, F.pad);
+  /* 西：6 米长的边沿（两边包角铁），长凳 */
+  F.ledge = T.add({ t: 'box', x: -9.6, z: -3.4, w: 0.55, d: 6, h: 0.42, name: 'ledge' }); ledgeEdges(T, F.ledge);
+  F.bench = prop(T, 'bench', -5.2, -2.2, 0, true);
+  T.marks = { stairs: { x0: -10, x1: -6, zMax: 3.3, top: 0.7 }, stairs5: true, bigQP: 0.95, longLedge: F.ledge, pad: F.pad };
+  T.decals = [['crack', 3, -3, 2, 0.6], ['stain', -4, 2, 2, 1], ['stain', 8, -10, 1.8, 0], ['manhole', -6, -10.5, 0.9, 0], ['drain', 11.2, 9.5, 1.2, 1.57]];
+  T.F = F;
+  return T;
+}
+
+export function buildMap(id) {
+  const T = id === 'park' ? buildPark() : buildSpot();
+  T.id = id === 'park' ? 'park' : 'spot';
   return T;
 }

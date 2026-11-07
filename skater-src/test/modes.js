@@ -80,7 +80,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (const k of ['ollieLow', 'high1', 'perfect', 'double', 'triple', 'shove360']) ok(ch[k], `3 挑战「${k}」能完成`);
   ok(ch.ledgeFull, `3 挑战「一口气滑完整根长台」能完成（一次最远磨了 ${ch.ledgeD.toFixed(1)} 米）`);
   ok(ch.manualPad, `3 挑战「Manual 台从头翘到尾」能完成（台面上翘了 ${ch.padD} 米）`);
-  ok(ch.n === 31 && /\/31$/.test(ch.count), `3 挑战一共 ${ch.n} 个，主菜单显示 ${ch.count}`);
+  ok(ch.n === 37 && /\/37$/.test(ch.count), `3 挑战一共 ${ch.n} 个，主菜单显示 ${ch.count}`);
   // 旧版本的挑战记录（已经删掉的名字）不算进完成数
   const cnt = await p.evaluate(() => { const a = JSON.parse(localStorage.getItem('fs_chal') || '[]'); return a.length; });
 
@@ -109,7 +109,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok(rp.speed === 0.5 && rp.before >= 0 && rp.before <= 1.51 && rp.shown && /接太早/.test(rp.text), `4b 打开回放：半速、从接板前 ${rp.before.toFixed(2)} 秒开始放，放到接板时屏幕上显示「${rp.text}」`);
   await p.evaluate(() => document.getElementById('rpExit').click());
 
-  // 5 练习：12 步，按力度；跳高了会提示轻一点
+  // 5 练习：16 步（2026-11-07 加了杆上侧划、Flip out、Stall、Impossible）；跳高了会提示轻一点
   const pr = await p.evaluate(() => {
     __dbg.startGame('practice'); __dbg.input.enabled = false;
     const P = __dbg.practice, { sk } = __dbg, toasts = [];
@@ -125,7 +125,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const steps = []; for (const [w, k, pk] of [['front', 0.1, 0.5], ['back', 0.1, 0.5], ['back', 0.6, 0.8], ['front', 0.6, 0.9]]) { const b = P.i; trick(w, k, pk); steps.push(b + '→' + P.i); }
     return { t0, n, stay, after, t1: document.getElementById('pracT').textContent, steps };
   });
-  ok(/12$/.test(pr.n), `5a 练习一共 12 步（${pr.n}）`);
+  ok(/16$/.test(pr.n), `5a 练习一共 16 步（${pr.n}）`);
   ok(pr.stay === 4 && pr.after === 5, `5b 「${pr.t0}」：用力跳不算过，轻轻跳才过；下一步是「${pr.t1}」`);
   ok(pr.steps.join(',') === '6→7,7→8,8→9,9→10', `5c 先拨再跳的四步（Kickflip、Pop Shove-it、360 Shove-it、Double Kickflip）都能过：${pr.steps.join(', ')}`);
 

@@ -13,6 +13,10 @@ const STEPS = [
   { t: '用力拨：Double Kickflip', s: '前指拨得又快又重，后指也用力划、跳高一点：板子翻两圈。跳得越高、拨得越重，圈数越多。等它转完再接。', demo: 'flip2' },
   { t: 'Manual 翘板滑', s: '只用一根手指按住板尾。越靠板尾翘得越高，让右边的指针停在绿色区，坚持 1.5 秒。', demo: 'manual' },
   { t: '磨杆', s: '前面的杆子亮起来时，两根手指同时按住不动，板子会自己跳上去磨；松开就跳下来。也可以自己起跳落到杆上。', demo: 'grind' },
+  { t: '杆上侧划：Boardslide', s: '磨杆的时候，前指按住不动，后指往旁边一划：板子在杆上转 90°，变成横着滑的 Boardslide。再划一下转回来。', demo: 'gturn' },
+  { t: '从杆上翻下来：Kickflip Out', s: '磨杆的时候，前指先往板边拨出去，后指再往板尾一划、松手：跳下杆的同时翻板。落地前把手指按回板上。', demo: 'flipout' },
+  { t: 'Stall：板头卡在台边', s: '朝旁边的长台轻轻跳过去，空中只留前指按在板子上：板头落到台边会卡住停下。停一会儿，松手就退回来；后指往板尾一划就跳上台子。', demo: 'stall' },
+  { t: 'Impossible', s: '两根手指一起往板尾方向划，松手：起跳的同时板子竖着绕后脚翻一圈。转完把手指按回板上。', demo: 'imp' },
 ];
 const $ = (id) => document.getElementById(id);
 
@@ -30,7 +34,8 @@ export class Practice {
     $('pracN').textContent = '练习 ' + (this.i + 1) + ' / ' + STEPS.length;
     $('pracT').textContent = S.t; $('pracS').textContent = S.s;
     $('pracDots').innerHTML = STEPS.map((_, k) => `<i class="${k < this.i ? 'ok' : k === this.i ? 'cur' : ''}"></i>`).join('');
-    if (S.demo === 'grind') this.h.teleport('grind');
+    if (S.demo === 'grind' || S.demo === 'gturn' || S.demo === 'flipout') this.h.teleport('grind');
+    if (S.demo === 'stall') this.h.teleport('stall');
     if (this.i > 0) this.h.good();
   }
   done() {
@@ -57,7 +62,11 @@ export class Practice {
     else if (d === 'shove2' && ns === 1 && !nf) this.h.tip && this.h.tip('只转了半圈：侧划得再快、再重一点');
     else if (d === 'flip2' && nf >= 2 && !ns) this.next();
     else if (d === 'flip2' && nf === 1 && !ns) this.h.tip && this.h.tip('翻了一圈：前指拨得再重一点，后指也划快一点跳高些');
+    else if (d === 'flipout' && a.fromGrind && a.popped && nf >= 1) this.next();
+    else if (d === 'flipout' && !a.fromGrind && nf >= 1) this.h.tip && this.h.tip('要在杆上拨：先磨上杆，再拨板、起跳');
+    else if (d === 'imp' && info.imp >= 1) this.next();
   }
+  gturn(g) { if (this.on && STEPS[this.i].demo === 'gturn' && g.type === 'slide') this.next(); }
   manual(t) { if (this.on && STEPS[this.i].demo === 'manual' && t >= 1.5) this.next(); }
   grind(t) { if (this.on && STEPS[this.i].demo === 'grind' && t >= 0.4) this.next(); }
   update(dt, sk, I, geo) {
@@ -71,13 +80,14 @@ export class Practice {
       if (this.turn > 4.5) this.next();
     } else if (d === 'kick') { if (sk.kickAcc > 1.4) this.next(); }
     else if (d === 'manual' && sk.manual && sk.manual.t >= 1.5) this.next();
-    else if (d === 'grind' && sk.mode === 'grind' && sk.grind && sk.grind.t >= 0.4) this.next();
+    else if (d === 'grind' && sk.mode === 'grind' && sk.grind && sk.grind.type !== 'stall' && sk.grind.t >= 0.4) this.next();
+    else if (d === 'stall' && sk.mode === 'grind' && sk.grind && sk.grind.type === 'stall' && sk.grind.t >= 0.6) this.next();
     this.demo(dt, I, geo);
   }
   // 手指动画：只在没有手指按着时显示
   demo(dt, I, geo) {
     const el = $('demo'), d = this.i < STEPS.length ? STEPS[this.i].demo : null;
-    if (!geo || I.touching > 0 || !d || d === 'grind') { el.classList.add('hide'); return; }
+    if (!geo || I.touching > 0 || !d || d === 'grind' || d === 'gturn' || d === 'flipout') { el.classList.add('hide'); return; } // 杆上的几步：手指动画挡视线，只看文字
     el.classList.remove('hide');
     this.ph = (this.ph + dt) % 1.6;
     const t = this.ph / 1.6, ux = geo.fx - geo.rx, uy = geo.fy - geo.ry, L = Math.hypot(ux, uy) || 1, nx = ux / L, ny = uy / L, px = -ny, py = nx;
@@ -97,6 +107,8 @@ export class Practice {
       const s2 = d === 'shove2', k1 = t < 0.3 ? 0 : e(Math.min(1, (t - 0.3) / (s2 ? 0.07 : 0.14)));
       A = t < 0.8 ? at(-0.6, k1 * (s2 ? 3 : 1.8)) : at(-0.45, 0); oa = t < 0.48 ? 1 : t < 0.8 ? 0 : 1; ob = t < 0.45 ? 1 : t < 0.8 ? 0 : 1; }
     else if (d === 'manual') { A = at(-0.82, 0); ob = 0; oa = 1; }
+    else if (d === 'stall') { oa = t < 0.3 ? 1 : 0; B = at(0.5, 0); ob = 1; if (t < 0.3) { const k = e(Math.min(1, t / 0.12)); A = at(-0.6 - k * 0.7, 0); } } // 后指划一下起跳，只留前指
+    else if (d === 'imp') { const k = t < 0.3 ? 0 : e(Math.min(1, (t - 0.3) / 0.12)); A = t < 0.8 ? at(-0.55 - k * 1.0, 0) : at(-0.45, 0); B = t < 0.8 ? at(0.5 - k * 1.0, 0) : at(0.45, 0); oa = ob = t < 0.48 ? 1 : t < 0.8 ? 0 : 1; } // 两指一起往板尾划
     else if (d === 'kick') { const k = Math.sin(t * 6.283); A = at(-0.6, 0); const a2 = k * 0.6; B = at(-0.6 + 1.15 * Math.cos(a2), 1.15 * Math.sin(a2) * 2.2); }
     const da = $('demoA'), db = $('demoB');
     da.style.transform = `translate(${A[0]}px,${A[1]}px)`; da.style.opacity = oa;

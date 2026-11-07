@@ -24,12 +24,22 @@ export class Sk8 {
     this.lobby = null;
     this.bc(); this.ui();
   }
+  // 和电脑玩（单机，不走网络）：level 0 简单 / 1 普通 / 2 难。玩家先出招
+  vsAI(level) {
+    if (this.state && this.state.phase !== 'over' && !this.state.ai) return;
+    this.h.aiStop && this.h.aiStop();
+    const me = this.me, letters = { [me]: 0, ai: 0 };
+    this.lobby = null; this.invite = null; this.pend = null; this.aiBusy = 0;
+    this.state = { gid: 'ai' + rid(), host: me, order: [me, 'ai'], names: { [me]: this.h.myName(), ai: '电脑' }, letters, setter: me, phase: 'set', trick: null, recipe: null, copier: null, queue: [], n: 1, until: Date.now() + ACT_TIME, winner: null, last: '和电脑玩：你先出招', ai: level + 1 };
+    this.ui();
+  }
   cancel() {
+    if (this.state && this.state.ai) { this.h.aiStop && this.h.aiStop(); this.state = null; this.pend = null; this.aiBusy = 0; this.ui(); return; }
     const gid = (this.lobby && this.lobby.gid) || (this.state && this.state.gid);
     if (gid) this.h.send('gx', { gid }, true);
     this.lobby = null; this.state = null; this.pend = null; this.ui();
   }
-  bc() { if (this.state && this.state.host === this.me) { this.lastBc = Date.now(); this.h.send('gs', this.state, true); } }
+  bc() { if (this.state && this.state.host === this.me && !this.state.ai) { this.lastBc = Date.now(); this.h.send('gs', this.state, true); } }
   alive() { return this.state.order.filter((id) => this.state.letters[id] < WORD.length); }
   nextAlive(after) { const o = this.state.order, i = o.indexOf(after); for (let k = 1; k <= o.length; k++) { const id = o[(i + k) % o.length]; if (this.state.letters[id] < WORD.length) return id; } return after; }
   apply(id, res) {
@@ -37,7 +47,7 @@ export class Sk8 {
     const nm = (x) => S.names[x] || '玩家';
     if (S.phase === 'set' && id === S.setter) {
       if (res.ok && res.trick) {
-        S.trick = res.trick; S.phase = 'copy';
+        S.trick = res.trick; S.recipe = res.recipe || null; S.phase = 'copy';
         S.queue = []; let c = S.setter; for (let k = 0; k < S.order.length; k++) { c = this.nextAlive(c); if (c === S.setter) break; S.queue.push(c); }
         S.copier = S.queue.shift() || null; S.last = nm(id) + ' 出了 ' + res.trick;
         if (!S.copier) { S.phase = 'set'; S.trick = null; }
@@ -53,7 +63,7 @@ export class Sk8 {
     if (al.length <= 1) { S.phase = 'over'; S.winner = al[0] || null; S.copier = null; }
     S.n++; S.until = Date.now() + ACT_TIME;
     this.bc(); this.ui();
-    if (S.phase === 'over' && S.winner === this.me) this.h.win && this.h.win();
+    if (S.phase === 'over' && S.winner === this.me) { this.h.win && this.h.win(); if (S.ai) this.h.aiWin && this.h.aiWin(); }
   }
   /* ---------- 收到的消息 ---------- */
   msg(ev, m) {
@@ -89,11 +99,11 @@ export class Sk8 {
     if (S.phase === 'copy' && S.copier === this.me) return 'copy';
     return null;
   }
-  attempt(trick, bailed) {
+  attempt(trick, bailed, recipe) {
     const turn = this.myTurn(); if (!turn || this.pend) return;
     if (!bailed && !trick) return; // 没有招式的落地不算
     const S = this.state;
-    const res = { ok: !bailed && (turn === 'set' ? true : trick === S.trick), trick: bailed ? null : trick };
+    const res = { ok: !bailed && (turn === 'set' ? true : trick === S.trick), trick: bailed ? null : trick, recipe: recipe || null };
     if (S.host === this.me) this.apply(this.me, res);
     else { this.pend = { gid: S.gid, n: S.n, ok: res.ok, trick: res.trick, t: 0 }; this.h.send('ga', { gid: S.gid, i: this.me, n: S.n, ok: res.ok, trick: res.trick }, true); }
   }
@@ -102,6 +112,13 @@ export class Sk8 {
     if (this.invite && !this.invite.joined && now - this.invite.t > 20000) { this.invite = null; this.ui(); }
     if (this.pend && now - this.pend.t > 1500) { this.pend.t = now; this.h.send('ga', { gid: this.pend.gid, i: this.me, n: this.pend.n, ok: this.pend.ok, trick: this.pend.trick }, true); }
     if (!S || S.phase === 'over') return;
+    if (S.ai) {
+      // 和电脑玩：轮到电脑就让它滑一遍（出招 / 照做）；轮到你还是 45 秒内要做
+      const aiTurn = (S.phase === 'set' && S.setter === 'ai') || (S.phase === 'copy' && S.copier === 'ai');
+      if (aiTurn) { S.until = now + ACT_TIME; if (this.aiBusy !== S.n) { this.aiBusy = S.n; const n = S.n; this.h.aiTurn(S.phase === 'set' ? null : S.recipe, S.ai - 1, (res) => { if (this.state === S && S.n === n) this.apply('ai', res); }); } }
+      else if (now > S.until) { const who = S.phase === 'set' ? S.setter : S.copier; if (who) this.apply(who, { ok: false, timeout: true }); }
+      return;
+    }
     if (S.host === this.me) {
       // 掉线的人直接出局；超时算失败；每 3 秒重发一次状态
       const here = new Set(this.h.players().map((p) => p.id));
@@ -126,10 +143,10 @@ export class Sk8 {
       const rows = S.order.map((id) => ({ name: nm(id), letters: S.letters[id], out: S.letters[id] >= WORD.length, turn: id === (S.phase === 'set' ? S.setter : S.copier) }));
       let msg;
       if (S.phase === 'over') msg = S.winner === me ? '你赢了！' : (nm(S.winner) + ' 赢了！');
-      else if (S.phase === 'set') msg = S.setter === me ? '轮到你出招：做一个招式，落地成功才算' : '等 ' + nm(S.setter) + ' 出招…';
-      else msg = S.copier === me ? '轮到你照做：' + S.trick : '等 ' + nm(S.copier) + ' 照做 ' + S.trick + '…';
+      else if (S.phase === 'set') msg = S.setter === me ? '轮到你出招：做一个招式，落地成功才算' : S.setter === 'ai' ? '电脑出招中…' : '等 ' + nm(S.setter) + ' 出招…';
+      else msg = S.copier === me ? '轮到你照做：' + S.trick : S.copier === 'ai' ? '电脑照做 ' + S.trick + '…' : '等 ' + nm(S.copier) + ' 照做 ' + S.trick + '…';
       const left = Math.max(0, Math.ceil((S.until - Date.now()) / 1000));
-      return { kind: 'game', rows, msg, last: S.last, over: S.phase === 'over', mine: !!this.myTurn(), left, host: S.host === me, waiting: !!this.pend };
+      return { kind: 'game', rows, msg, last: S.last, over: S.phase === 'over', mine: !!this.myTurn(), left, host: S.host === me, waiting: !!this.pend, ai: !!S.ai };
     }
     if (this.invite) return { kind: 'invite', host: this.invite.hn, joined: !!this.invite.joined };
     return { kind: 'none' };

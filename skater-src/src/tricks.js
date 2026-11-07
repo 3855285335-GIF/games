@@ -23,12 +23,17 @@ export function flipName(flips, shoves) {
 export function airTrick(info) {
   const a = info.air;
   let f = flipName(info.flips, info.shoves), name, pts;
+  // Impossible：板子竖着绕后脚翻一圈（可以和翻板、转板一起做）
+  const ni = info.imp | 0;
+  if (ni) { const pre = ni === 2 ? 'Double ' : ni >= 3 ? ni + 'x ' : ''; f = f ? { name: pre + 'Impossible ' + f.name, pts: f.pts + 260 * ni } : { name: pre + 'Impossible', pts: 240 * ni }; }
   if (f) { name = f.name; pts = f.pts; }
   else if (a.popped) { name = 'Ollie'; pts = 50; }
   else if (a.fromTrans && info.above > 0.15) { name = 'Air'; pts = 60; }
   else if (a.fromGrind) { name = null; pts = 0; }
   else { name = null; pts = 0; }
-  if (name && a.popped) {
+  // 从杆上翻下来（Flip out）：在杆上就拨好、起跳下杆的同时翻
+  if (f && a.fromGrind && a.popped) { name += ' Out'; pts += 90; }
+  if (name && a.popped && !a.fromGrind) {
     if (a.pop === 'nose') { name = name === 'Ollie' ? 'Nollie' : 'Nollie ' + name; pts += 40; }
     else if (a.fakie) { name = 'Fakie ' + name; pts += 30; }
   }
@@ -45,7 +50,7 @@ export function airTrick(info) {
   return { name, pts: Math.round(pts) };
 }
 
-export const GRIND_RATE = { '50-50': 150, '5-0': 190, 'Nosegrind': 210, 'Crooked': 220, 'Boardslide': 180, 'Lipslide': 190 };
+export const GRIND_RATE = { '50-50': 150, '5-0': 190, 'Nosegrind': 210, 'Crooked': 220, 'Boardslide': 180, 'Lipslide': 190, 'Nose Stall': 130, 'Tail Stall': 120 };
 
 export class Combo {
   constructor(cb) { this.cb = cb || {}; this.total = 0; this.clear(); }
@@ -116,6 +121,12 @@ export const CHALLENGES = [
   { id: 'shove360', t: '★ 用力侧拨：360 Shove-it' },
   { id: 'double', t: '★ 用力拨：Double Kickflip（翻两圈）' },
   { id: 'triple', t: '★ 跳高再狠狠一拨：Triple Kickflip（翻三圈）' },
+  { id: 'grindTurn', t: '★ 磨杆时后指侧划：在杆上转成 Boardslide' },
+  { id: 'flipOut', t: '★ 在杆上拨板再起跳：Kickflip Out' },
+  { id: 'stall', t: '★ Stall：只按前指（或后指），板头卡在台边停 1 秒' },
+  { id: 'impossible', t: '★ 两指一起往板尾划：Impossible' },
+  { id: 'aiWin', t: '★ 和电脑玩 S.K.A.T.E. 赢一次' },
+  { id: 'stairs5', t: '在小公园跳下 5 级台阶' },
   { id: 'varial', t: '完成 Varial Kickflip' },
   { id: 'tre', t: '完成 360 Flip' },
   { id: 'nollie', t: '完成任意 Nollie 招式' },
